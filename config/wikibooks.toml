@@ -1,0 +1,49 @@
+# Curadoria manual do material didático (Seção 2): páginas do pt.wikibooks.org por tópico.
+# Títulos verificados na API do Wikibooks em 2026-10-27. Ampliar/ajustar é parte da curadoria.
+
+[[pagina]]
+topico = "funcoes"
+titulos = [
+    "Matemática elementar/Funções",
+    "Matemática elementar/Função quadrática",
+    "Matemática elementar/Logaritmos",
+    "Red Book - Vestibular/Matemática/Função do segundo grau",
+]
+
+[[pagina]]
+topico = "probabilidade"
+titulos = [
+    "Matemática elementar/Análise combinatória",
+    "Probabilidade e Estatística/Fundamentos de probabilidade",
+    "Probabilidade e Estatística/Probabilidade",
+    "Probabilidade e Estatística/Probabilidade condicional e independência",
+]
+
+[[pagina]]
+topico = "cinematica"
+titulos = [
+    "Introdução à física/Cinemática/Velocidade",
+    "Introdução à física/Cinemática/Movimento",
+    "Introdução à física/Cinemática/Movimento/Movimento retilíneo e uniforme",
+    "Mecânica Newtoniana/Movimento Uniforme",
+    "Introdução à física/Cinemática/Movimento/Movimento retilíneo uniformemente variado",
+    "Mecânica Newtoniana/Movimento Uniformemente Variado",
+    "Notas de Mecânica/Movimento Retilíneo Uniformemente variado",
+    "Introdução à física/Cinemática/Movimento/Movimento de projéteis",
+    "Mecânica Newtoniana/Movimento Circular",
+]
+
+[[pagina]]
+topico = "dinamica"
+titulos = [
+    "Mecânica Newtoniana/Leis de Newton",
+    "Introdução à física/Dinâmica/Leis de Newton/Princípio da inércia",
+    "Introdução à física/Dinâmica/Leis de Newton/Princípio fundamental da dinâmica",
+    "Introdução à física/Dinâmica/Leis de Newton/Lei da ação e reação",
+    "Introdução à física/Dinâmica/Decomposição de vetores",
+    "Mecânica Newtoniana/Atrito",
+    "Introdução à física/Cinemática/Movimento/Força de atrito",
+    "Introdução à física/Energia",
+    "Introdução à física/Energia/Energia mecânica/Lei da conservação da energia mecânica",
+    "Mecânica Newtoniana/Conservação do Momento Linear",
+]

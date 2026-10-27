@@ -1,0 +1,54 @@
+[project]
+name = "estudai"
+version = "0.1.0"
+description = "Pipeline multiagente de tutoria adaptativa em Matemática e Física para vestibulares brasileiros"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Fause Mascarenhas" },
+    { name = "Vinícius Faria" },
+]
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "sympy>=1.12",
+    "httpx>=0.27",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.0"]
+openai = ["openai>=1.40"]
+ingest = ["datasets>=2.19"]
+all = ["estudai[gemini,openai,ingest]"]
+
+[project.scripts]
+estudai = "estudai.interfaces.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/estudai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# o Typer declara opções com listas/chamadas como valores padrão
+"src/estudai/interfaces/cli.py" = ["B006", "B008"]

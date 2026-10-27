@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Dados gerados (baixados/indexados) e resultados de experimentos
+data/raw/
+data/processed/
+data/index/
+data/profiles/
+results/
