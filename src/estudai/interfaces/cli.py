@@ -59,6 +59,7 @@ def ingest_questions(
     container = _container()
     s = container.settings
     brutas = chain.from_iterable(islice(FONTES[f](), limite) for f in fontes)
+
     questoes, stats = ingerir_questoes(
         brutas,
         ClassificadorQuestoes(container.llm_economico, temperature=0.0),

@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pydantic import ValidationError
+from tqdm import tqdm
 
 from estudai.agents.base import AgentOutputError
 from estudai.domain.curriculum import Disciplina, Topico
@@ -107,12 +108,13 @@ def ingerir_questoes(
             return b, rotulo
         try:
             return b, classificador.classificar(b)
-        except (AgentOutputError, LLMError):
+        except (AgentOutputError, LLMError) as e:
+            print("Erro ao rotular: ", e)
             return b, None
 
     questoes = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for i, (bruta, rotulo) in enumerate(pool.map(rotular, elegiveis), start=1):
+        for bruta, rotulo in tqdm(pool.map(rotular, elegiveis), desc="Rotulando Questões"):
             if rotulo is None:
                 stats["falha_rotulagem"] += 1
                 continue
@@ -122,8 +124,6 @@ def ingerir_questoes(
                 stats["fora_do_escopo"] += 1
             else:
                 questoes.append(questao)
-            if i % 50 == 0:
-                progresso(f"{i}/{len(elegiveis)} rotuladas")
 
     questoes = separar_bateria(questoes, bateria_por_topico, seed)
     for q in questoes:

@@ -45,9 +45,11 @@ def carregar_bluex() -> Iterator[QuestaoBruta]:
     disciplinas = {"mathematics": Disciplina.MATEMATICA, "physics": Disciplina.FISICA}
     for row in _load("portuguese-benchmark-datasets/BLUEX", split="questions"):
         indicada = next((disciplinas[s] for s in row["subject"] if s in disciplinas), None)
-        if indicada is None or row["alternatives_type"] != "string":
-            continue  # fora do escopo, ou alternativas em imagem
+        if indicada is None or row["alternatives_type"] != "string" or not row["answer"]:
+            continue
+
         legendas = list(row.get("blind_captions") or []) + list(row.get("context_captions") or [])
+
         yield QuestaoBruta(
             id=f"BLUEX#{row['id']}",
             fonte="bluex",
@@ -65,6 +67,7 @@ def carregar_enem_challenge() -> Iterator[QuestaoBruta]:
     for row in _load("eduagarcia/enem_challenge", split="train"):
         if row["nullified"]:
             continue
+
         yield QuestaoBruta(
             id=f"ENEMC#{row['id']}",
             fonte="enem_challenge",
@@ -77,14 +80,16 @@ def carregar_enem_challenge() -> Iterator[QuestaoBruta]:
 
 def carregar_enem_2022_2024() -> Iterator[QuestaoBruta]:
     for ano in ("2022", "2023", "2024"):
-        for row in _load("maritaca-ai/enem", ano, split="train"):
+        for row in _load("maritaca-ai/enem", name=ano, split="train"):
             alternativas = list(row["alternatives"])
             if any(PLACEHOLDER in a for a in alternativas):
                 continue  # alternativas em imagem
+
             descricoes = list(row.get("description") or [])
             enunciado = row["question"]
             for desc in descricoes:
                 enunciado = enunciado.replace(PLACEHOLDER, f"[Figura: {desc}]", 1)
+
             yield QuestaoBruta(
                 id=f"ENEM{ano}#{row['id']}",
                 fonte="enem_2022_2024",
