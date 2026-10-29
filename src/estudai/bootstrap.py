@@ -21,8 +21,8 @@ from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, 
 from estudai.application.telemetria import UsageLedger
 from estudai.application.validacao import PainelResolutores, ValidadorExercicios, VerificadorSimbolico
 from estudai.domain.curriculum import Disciplina
-from estudai.infrastructure.knowledge.embedders import HashingEmbedder
-from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
+from estudai.infrastructure.knowledge.database import KnowledgeDatabase
+from estudai.infrastructure.knowledge.embedders import SentenceTransformersEmbedder
 from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.infrastructure.llm.decorators import RetryingLLMClient, TrackingLLMClient
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
@@ -86,15 +86,17 @@ class Container:
 
     @cached_property
     def embedder(self) -> Embedder:
-        if self.settings.embedding_provider == "hashing":
-            return HashingEmbedder()
+        if self.settings.embedding_provider == "sentencetransformers":
+            return SentenceTransformersEmbedder(
+                self.settings.embedding_model, self.settings.embedding_query_params, self.settings.embedding_doc_params
+            )
         from estudai.infrastructure.llm.gemini import GeminiEmbedder
 
         return GeminiEmbedder(self.settings.embedding_model, _segredo(self.settings.gemini_api_key))
 
     @cached_property
     def kb(self) -> KnowledgeBase:
-        return HybridKnowledgeBase.load(self.settings.index_dir, self.embedder, alpha=self.settings.kb_alpha)
+        return KnowledgeDatabase(self.settings.knowledge_db_uri, self.embedder)
 
     @cached_property
     def banco(self) -> QuestionBank:

@@ -21,10 +21,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=3.0",
+    "torch>=2.9"
+]
 gemini = ["google-genai>=1.0"]
 openai = ["openai>=1.40"]
 ingest = ["datasets>=2.19"]
-all = ["estudai[gemini,openai,ingest]"]
+all = ["estudai[embeddings,gemini,openai,ingest]"]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'", extra = "embeddings" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.scripts]
 estudai = "estudai.interfaces.cli:app"

@@ -1,10 +1,10 @@
 import pytest
+from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
 
 from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.material import TipoDocumento
 from estudai.domain.questoes import Dificuldade, Particao, Questao
 from estudai.infrastructure.knowledge.embedders import HashingEmbedder
-from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
 from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.ports.knowledge import Document
 

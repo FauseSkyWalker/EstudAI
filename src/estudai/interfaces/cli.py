@@ -99,19 +99,22 @@ def build_index() -> None:
     """Monta a base vetorial (trechos didáticos + questões do banco, sem a bateria)."""
     from estudai.infrastructure.ingestion.indice import montar_documentos
     from estudai.infrastructure.ingestion.wikibooks import Trecho
-    from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
+    from estudai.infrastructure.knowledge.database import KnowledgeDatabase
     from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 
     container = _container()
     s = container.settings
+
     trechos = [
         Trecho.model_validate_json(linha) for linha in s.trechos_path.read_text(encoding="utf-8").splitlines() if linha
     ]
     questoes = JsonlQuestionBank.load(s.questoes_path).find()
+
     documentos = montar_documentos(trechos, questoes)
-    kb = HybridKnowledgeBase.build(documentos, container.embedder, alpha=s.kb_alpha)
-    kb.save(s.index_dir)
-    console.print(f"[green]{len(kb)} documentos indexados em {s.index_dir}[/green]")
+
+    kb = KnowledgeDatabase.build(s.knowledge_db_uri, documentos, container.embedder)
+
+    console.print(f"[green]{len(kb)} documentos indexados em {s.knowledge_db_uri}[/green]")
 
 
 @app.command()

@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
 
-    embedding_provider: Literal["gemini", "hashing"] = "gemini"
+    embedding_provider: Literal["gemini", "sentencetransformers"] = "gemini"
     embedding_model: str = "gemini-embedding-001"
+    embedding_query_params: dict[str, any] = {}
+    embedding_doc_params: dict[str, any] = {}
 
     data_dir: Path = Path("data")
     llm_timeout_s: float = 180.0
@@ -61,6 +63,10 @@ class Settings(BaseSettings):
         return self.data_dir / "processed" / "rotulos_cache.jsonl"
 
     @property
+    def embeddings_cache_path(self) -> Path:
+        return self.data_dir / "processed" / "embeddings_cache"
+
+    @property
     def index_dir(self) -> Path:
         return self.data_dir / "index"
 
@@ -69,5 +75,5 @@ class Settings(BaseSettings):
         return self.data_dir / "profiles"
 
     @property
-    def knowledge_db_dir(self) -> Path:
+    def knowledge_db_uri(self) -> Path:
         return self.data_dir / "knowledge_db.lancedb"

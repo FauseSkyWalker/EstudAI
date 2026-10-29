@@ -23,6 +23,7 @@ class Document(BaseModel):
     texto: str
     topico: Topico | None = None
     metadados: dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = None
 
 
 class SearchHit(BaseModel):
@@ -34,7 +35,7 @@ class KnowledgeBase(Protocol):
     def search(
         self,
         query: str,
-        mode: SearchMode = SearchMode.HIBRIDA,
+        mode: SearchMode = SearchMode.TEXTUAL,
         k: int = 5,
         tipo: TipoDocumento | None = None,
         topico: Topico | None = None,
