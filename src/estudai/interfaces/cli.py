@@ -66,7 +66,6 @@ def ingest_questions(
         RotuloCache(s.rotulos_cache_path),
         bateria_por_topico=bateria,
         workers=workers,
-        progresso=console.print,
     )
     JsonlQuestionBank.save(questoes, s.questoes_path)
     console.print_json(json.dumps(stats))

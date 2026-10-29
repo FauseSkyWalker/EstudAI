@@ -65,7 +65,7 @@ def carregar_bluex() -> Iterator[QuestaoBruta]:
 
 def carregar_enem_challenge() -> Iterator[QuestaoBruta]:
     for row in _load("eduagarcia/enem_challenge", split="train"):
-        if row["nullified"]:
+        if row["nullified"] or int(row["exam_year"]) >= 2022:
             continue
 
         yield QuestaoBruta(
