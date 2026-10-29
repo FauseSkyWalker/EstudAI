@@ -9,8 +9,5 @@ build/
 *.egg-info/
 
 # Dados gerados (baixados/indexados) e resultados de experimentos
-data/raw/
-data/processed/
-data/index/
-data/profiles/
+data/
 results/
