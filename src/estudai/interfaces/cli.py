@@ -76,7 +76,7 @@ def ingest_questions(
 
 @app.command("ingest-wikibooks")
 def ingest_wikibooks(config: Path = Path("config/wikibooks.toml")) -> None:
-    """Baixa as páginas curadas do Wikibooks e as fatia em trechos."""
+    """Baixa as páginas do Wikibooks indicadas em `config/wikibooks.toml` e aplica chunking."""
     from estudai.infrastructure.ingestion.wikibooks import PaginaWiki, baixar_paginas, fatiar, ler_curadoria
     from estudai.settings import Settings
 

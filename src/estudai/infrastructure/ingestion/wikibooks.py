@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from estudai.domain.curriculum import Topico
 
 API = "https://pt.wikibooks.org/w/api.php"
-# A política da Wikimedia exige contato (URL ou e-mail) no User-Agent; sem ele, a API responde 403.
 USER_AGENT = "EstudAI/0.1 (https://ic.unicamp.br; projeto academico MO810A) python-httpx"
 _SECAO = re.compile(r"^(=+)\s*(.+?)\s*\1\s*$")
 

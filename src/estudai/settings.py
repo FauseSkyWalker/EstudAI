@@ -19,12 +19,11 @@ class ModelConfig(BaseModel):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ESTUDAI_", env_nested_delimiter="__", env_file=".env", extra="ignore")
 
-    # Níveis de capacidade (Seção 3)
     economic: ModelConfig = ModelConfig(model="gemini-3-flash")
     frontier: ModelConfig = ModelConfig(provider="openai_compat", model="muse-spark-1.3")
-    # Painel de resolutores: idealmente modelos distintos; None = 3x o modelo de fronteira
+    # Painel de resolutores
     panel: list[ModelConfig] | None = None
-    # Avaliação: juízes (preferencialmente outro fornecedor) e estudante simulado
+    # Avaliação - juízes e simulador do aluno
     judges: list[ModelConfig] = [ModelConfig(model="gemini-3-flash")]
     student: ModelConfig | None = None  # None = modelo econômico
 
@@ -39,7 +38,7 @@ class Settings(BaseSettings):
     llm_max_attempts: int = 4
     sandbox_timeout_s: float = 10.0
 
-    # Limites de execução (Tabela 2 / Seção 4)
+    # Limites de execução
     kb_k: int = 4
     kb_min_score: float = 0.2
     kb_alpha: float = 0.5
@@ -68,3 +67,7 @@ class Settings(BaseSettings):
     @property
     def profiles_dir(self) -> Path:
         return self.data_dir / "profiles"
+
+    @property
+    def knowledge_db_dir(self) -> Path:
+        return self.data_dir / "knowledge_db.lancedb"

@@ -92,7 +92,6 @@ def ingerir_questoes(
     bateria_por_topico: int = 8,
     seed: int = 0,
     workers: int = 8,
-    progresso: Callable[[str], None] = lambda _: None,
 ) -> tuple[list[Questao], dict[str, int]]:
     stats: dict[str, int] = defaultdict(int)
     elegiveis = []
