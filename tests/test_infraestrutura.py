@@ -5,20 +5,12 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
 from estudai.domain.perfil import PerfilAluno
 from estudai.infrastructure.ingestion.wikibooks import PaginaWiki, fatiar
-from estudai.infrastructure.knowledge.bm25 import BM25Index
-from estudai.infrastructure.knowledge.embedders import HashingEmbedder
-from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
+from estudai.infrastructure.knowledge.database import KnowledgeDatabase
 from estudai.infrastructure.llm.decorators import RetryingLLMClient, TrackingLLMClient
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 from estudai.ports.knowledge import SearchMode
 from estudai.ports.llm import ChatMessage, LLMRequest, LLMResponse, TransientLLMError, Usage
-
-
-def test_bm25_ignora_acentos_e_ranqueia():
-    idx = BM25Index(["função quadrática e parábola", "movimento uniforme", "funcao afim"])
-    scores = idx.scores("FUNÇÃO quadratica")
-    assert scores.argmax() == 0 and scores[1] == 0
 
 
 @pytest.mark.parametrize("modo", list(SearchMode))
@@ -29,11 +21,15 @@ def test_busca_respeita_filtros(kb, modo):
     assert all(0 <= h.score <= 1 for h in hits)
 
 
-def test_kb_persiste_e_recarrega(kb, tmp_path):
-    kb.save(tmp_path)
-    recarregada = HybridKnowledgeBase.load(tmp_path, HashingEmbedder())
+def test_kb_persiste_e_recarrega(kb):
+    recarregada = KnowledgeDatabase(kb.db.uri)
     assert len(recarregada) == len(kb)
     assert recarregada.search("movimento uniforme", k=1)[0].document.id == "wb-mru"
+
+
+@pytest.mark.parametrize("modo", [SearchMode.SEMANTICA, SearchMode.HIBRIDA])
+def test_sem_embedder_cai_para_bm25(kb, modo):
+    assert kb.search("parábola vértice", modo, k=5) == kb.search("parábola vértice", SearchMode.TEXTUAL, k=5)
 
 
 def test_repositorio_preserva_versoes(tmp_path):

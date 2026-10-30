@@ -1,32 +1,38 @@
 """Base de conhecimento persistente para o projeto. Permitindo busca semântica, híbrida e léxica.
 
-Utilizamos o `lancedb` para busca e base de dados.
+Utilizamos o `lancedb` para busca e base de dados. O embedder também é opcional, permitindo o descarte
+de modelos densos e utilizando apenas o BM25, que é léxico.
 """
 
 import lancedb
 
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
-from estudai.ports.knowledge import Document, SearchMode
+from estudai.ports.knowledge import Document, SearchHit, SearchMode
 from estudai.ports.llm import Embedder
 
 DOCS_TABLE_NAME = "documents"
 
 
 class KnowledgeDatabase:
-    def __init__(self, db_uri: str, embedder: Embedder):
+    def __init__(self, db_uri: str, embedder: Embedder | None = None):
         "Loads a pre-built knowledge-base from a lancedb URI"
         self.db = lancedb.connect(db_uri)
         self.embedder = embedder
 
     @classmethod
-    def build(cls, db_uri: str, documentos: list[Document], embedder: Embedder, **kw) -> "KnowledgeDatabase":
-        "Builds a knowledge base from documents and an embedder. Returns a ready-to-use `KnowledgeDatabase` class"
+    def build(
+        cls, db_uri: str, documentos: list[Document], embedder: Embedder | None = None, **kw
+    ) -> "KnowledgeDatabase":
+        """Builds a knowledge base from documents and an optional embedder.
 
-        # Embed documents
-        embeddings = embedder.embed([d.texto for d in documentos], query=False)
-        for i, d in enumerate(documentos):
-            d.embedding = embeddings[i]
+        Returns a ready-to-use `KnowledgeDatabase` class.
+        """
+
+        if embedder is not None:
+            embeddings = embedder.embed([d.texto for d in documentos], query=False)
+            for i, d in enumerate(documentos):
+                d.embedding = embeddings[i]
 
         db = lancedb.connect(db_uri)
         db.create_table(DOCS_TABLE_NAME, data=[d.model_dump() for d in documentos], mode="overwrite")
@@ -52,14 +58,17 @@ class KnowledgeDatabase:
         k: int = 5,
         tipo: TipoDocumento | None = None,
         topico: Topico | None = None,
-    ) -> list[Document]:
+    ) -> list[SearchHit]:
         t = self.db.open_table(DOCS_TABLE_NAME)
 
-        if mode == SearchMode.TEXTUAL:
+        # Sem embedder não há como vetorizar a consulta: usa BM25.
+        effective_mode = SearchMode.TEXTUAL if self.embedder is None else mode
+
+        if effective_mode == SearchMode.TEXTUAL:
             results = t.search(query, query_type="fts")
         else:
             vetor = self.embedder.embed([query], query=True)[0]
-            if mode == SearchMode.SEMANTICA:
+            if effective_mode == SearchMode.SEMANTICA:
                 results = t.search(vetor, vector_column_name="embedding", query_type="vector").bypass_vector_index()
             else:
                 results = (
@@ -74,11 +83,35 @@ class KnowledgeDatabase:
         if topico:
             results = results.where(f"topico = '{topico.value}'")
 
-        return results.limit(k).to_pydantic(Document)
+        rows = results.limit(k).to_arrow().to_pylist()
+
+        return self._hits(rows, effective_mode)
+
+    @staticmethod
+    def _hits(rows: list[dict], mode: SearchMode) -> list[SearchHit]:
+        """Converts a list of dict objects into `SearchHit`s"""
+
+        if mode == SearchMode.SEMANTICA:
+            raw = [1.0 / (1.0 + float(r.get("_distance", 0.0))) for r in rows]
+        elif mode == SearchMode.HIBRIDA:
+            raw = [float(r.get("_relevance_score", 0.0)) for r in rows]
+        else:
+            raw = [float(r.get("_score", 0.0)) for r in rows]
+
+        best = max(raw, default=0.0)
+        return [
+            SearchHit(
+                document=Document(**{k: v for k, v in row.items() if not k.startswith("_")}),
+                score=min(1.0, max(0.0, value / best)) if best > 0 else 0.0,
+            )
+            for row, value in zip(rows, raw, strict=True)
+        ]
 
     def get(self, doc_id: str) -> Document | None:
         t = self.db.open_table(DOCS_TABLE_NAME)
 
-        results = t.search().where(f"id = '{doc_id}'").limit(1).to_list()
+        rows = t.search().where(f"id = '{doc_id}'").limit(1).to_arrow().to_pylist()
+        if not rows:
+            return None
 
-        return results[0] if results else None
+        return Document(**{k: v for k, v in rows[0].items() if not k.startswith("_")})

@@ -1,10 +1,9 @@
 import pytest
-from estudai.infrastructure.knowledge.hybrid import HybridKnowledgeBase
 
 from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.material import TipoDocumento
 from estudai.domain.questoes import Dificuldade, Particao, Questao
-from estudai.infrastructure.knowledge.embedders import HashingEmbedder
+from estudai.infrastructure.knowledge.database import KnowledgeDatabase
 from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.ports.knowledge import Document
 
@@ -34,7 +33,7 @@ def banco() -> JsonlQuestionBank:
 
 
 @pytest.fixture
-def kb() -> HybridKnowledgeBase:
+def kb(tmp_path) -> KnowledgeDatabase:
     docs = [
         Document(
             id="wb-afim",
@@ -65,4 +64,4 @@ def kb() -> HybridKnowledgeBase:
             texto="Questão de vestibular sobre o vértice da parábola da função quadrática.",
         ),
     ]
-    return HybridKnowledgeBase.build(docs, HashingEmbedder())
+    return KnowledgeDatabase.build(str(tmp_path / "knowledge"), docs)

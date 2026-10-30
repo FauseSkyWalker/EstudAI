@@ -104,8 +104,8 @@ O experimento grava cada execução assim que termina; rodar de novo o mesmo com
 uv run pytest
 ```
 
-Os testes não fazem chamadas de rede: usam um LLM roteirizado (`tests/fakes.py`), o embedder
-por hashing e o executor de sandbox real.
+Os testes não fazem chamadas de rede: usam um LLM roteirizado (`tests/fakes.py`), a base BM25
+do LanceDB (sem embeddings) e o executor de sandbox real.
 
 ## Limitações conhecidas (além das da Seção 5.4)
 
@@ -113,4 +113,5 @@ por hashing e o executor de sandbox real.
   adversarial; em produção, rode o executor em contêiner sem rede.
 - A verificação simbólica só confirma itens cuja resposta é um número; os demais dependem
   apenas do consenso do painel (com limiar de unanimidade, configurável).
-- O embedder por hashing (`ESTUDAI_EMBEDDING_PROVIDER=hashing`) é só para testes/uso offline.
+- A base de conhecimento funciona só com BM25 quando não recebe um embedder; nesse caso os
+  modos semântico e híbrido caem para a busca textual.
