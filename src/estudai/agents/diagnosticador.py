@@ -9,6 +9,8 @@
 import random
 from collections import defaultdict
 
+from langchain.chat_models import BaseChatModel
+from langchain_core.callbacks import BaseCallbackHandler
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import Agent, AgentOutputError, to_json
@@ -17,7 +19,6 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
 from estudai.domain.perfil import Diagnostico, NivelDominio, PerfilAluno
 from estudai.domain.questoes import Dificuldade, Questao
-from estudai.ports.llm import LLMClient
 
 SYSTEM = """Você é o Agente Diagnosticador de um sistema de tutoria adaptativa para vestibulares
 brasileiros (Matemática e Física). A partir das evidências (respostas do aluno, corretas ou
@@ -40,8 +41,16 @@ class Evidencia(BaseModel):
 class Diagnosticador(Agent):
     papel = Papel.DIAGNOSTICADOR
 
-    def __init__(self, llm: LLMClient, *, max_perguntas: int = 6, cobertura_minima: float = 0.8, **kw):
-        super().__init__(llm, **kw)
+    def __init__(
+        self,
+        model: BaseChatModel,
+        usage_cb: BaseCallbackHandler,
+        *,
+        max_perguntas: int = 6,
+        cobertura_minima: float = 0.8,
+        **kw,
+    ):
+        super().__init__(model, usage_cb, **kw)
         self._max_perguntas = max_perguntas
         self._cobertura_minima = cobertura_minima
 

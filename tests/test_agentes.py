@@ -1,8 +1,8 @@
 import pytest
-from fakes import ScriptedLLM, react_final
+from fakes import FakeChatModel, react_final
 from pydantic import BaseModel
 
-from estudai.agents.base import Agent, AgentOutputError, extract_json
+from estudai.agents.base import Agent, AgentOutputError
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
 from estudai.agents.diagnosticador import Diagnosticador, Evidencia
@@ -12,6 +12,7 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
 from estudai.domain.perfil import NivelDominio, PerfilAluno
 from estudai.domain.questoes import Dificuldade, Exercicio
+from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 
 
 class Saida(BaseModel):
@@ -25,24 +26,17 @@ class AgenteTeste(Agent):
         return self._ask("sys", "prompt", Saida)
 
 
-def test_extract_json_tolera_cercas_e_texto():
-    assert extract_json('Claro!\n```json\n{"valor": 1}\n```') == '{"valor": 1}'
-    assert extract_json('resposta: {"a": {"b": 2}} fim') == '{"a": {"b": 2}}'
-    with pytest.raises(ValueError):
-        extract_json("sem json")
-
-
 def test_saida_invalida_e_reenviada_com_instrucao_de_correcao():
-    llm = ScriptedLLM({"tutor": ['{"valor": "abc"}', '{"valor": 7}']})
-    assert AgenteTeste(llm).pedir().valor == 7
+    llm = FakeChatModel({"tutor": ['{"valor": "abc"}', '{"valor": 7}']})
+    assert AgenteTeste(llm, UsageLedgerCallback()).pedir().valor == 7
     reparo = llm.requests[1].messages[-1].content
     assert "inválida" in reparo and "valor" in reparo
 
 
 def test_desiste_apos_limite_de_reparos():
-    llm = ScriptedLLM({"tutor": ["lixo"]})
+    llm = FakeChatModel({"tutor": ["lixo"]})
     with pytest.raises(AgentOutputError):
-        AgenteTeste(llm, max_repairs=1).pedir()
+        AgenteTeste(llm, UsageLedgerCallback(), max_repairs=1).pedir()
     assert len(llm.requests) == 2
 
 
@@ -57,7 +51,7 @@ def test_react_usa_ferramenta_e_recupera_de_erros():
         {"pensamento": "dobrar", "acao": "dobro", "entrada": {"x": 21}},
         react_final({"valor": 42}),
     ]
-    llm = ScriptedLLM({"teste": passos})
+    llm = FakeChatModel({"teste": passos})
     dobro = Tool("dobro", "dobra x", Args, lambda a: str(a.x * 2))
     saida, trace = ReActRunner(llm, caller="teste", max_steps=5).run("sys", "tarefa", [dobro], Saida)
 
@@ -69,7 +63,7 @@ def test_react_usa_ferramenta_e_recupera_de_erros():
 
 
 def test_react_estoura_limite_de_passos():
-    llm = ScriptedLLM({"teste": [{"pensamento": "", "acao": "dobro", "entrada": {"x": 1}}]})
+    llm = FakeChatModel({"teste": [{"pensamento": "", "acao": "dobro", "entrada": {"x": 1}}]})
     dobro = Tool("dobro", "dobra x", Args, lambda a: str(a.x * 2))
     with pytest.raises(AgentOutputError):
         ReActRunner(llm, caller="teste", max_steps=3).run("sys", "tarefa", [dobro], Saida)
@@ -81,7 +75,7 @@ def test_conteudo_descarta_ids_inventados_e_entrega_texto_original(kb):
         {"pensamento": "", "acao": "busca_hibrida", "entrada": {"consulta": "vértice da parábola função quadrática"}},
         react_final({"trechos": ["id-inventado", "wb-quad"], "questoes_referencia": ["Q1"]}),
     ]
-    agente = AgenteConteudo(ScriptedLLM({"conteudo": passos}), kb, k=2, min_score=0.01)
+    agente = AgenteConteudo(FakeChatModel({"conteudo": passos}), kb, k=2, min_score=0.01)
     pacote = agente.buscar("ensinar função quadrática", Topico.FUNCOES)
 
     ids = [t.doc_id for t in pacote.trechos]
@@ -92,7 +86,9 @@ def test_conteudo_descarta_ids_inventados_e_entrega_texto_original(kb):
 
 
 def test_diagnosticador_cobre_conceitos_e_cai_para_fallback(banco):
-    diag = Diagnosticador(ScriptedLLM({"diagnosticador": ["inválido"]}), max_perguntas=4, max_repairs=0)
+    diag = Diagnosticador(
+        FakeChatModel({"diagnosticador": ["inválido"]}), UsageLedgerCallback(), max_perguntas=4, max_repairs=0
+    )
     sondagem = diag.selecionar_sondagem(Topico.FUNCOES, banco.find(Topico.FUNCOES))
     conceitos = [c for q in sondagem for c in q.conceitos]
     assert len(sondagem) == 4 and len(set(conceitos)) == 4  # cada pergunta cobre um conceito novo
@@ -108,12 +104,14 @@ def test_diagnosticador_cobre_conceitos_e_cai_para_fallback(banco):
 
 
 def test_corretor_tem_corretude_deterministica():
-    llm = ScriptedLLM({"corretor": [{"nota": 0.9, "feedback": "ok", "erros": []}]})
+    llm = FakeChatModel({"corretor": [{"nota": 0.9, "feedback": "ok", "erros": []}]})
     item = Exercicio(id="e1", topico=Topico.FUNCOES, enunciado="?", alternativas=list("abcde"), gabarito="C")
     # o LLM dá nota alta, mas a alternativa está errada: `correta` não vem do LLM
-    correcao = Corretor(llm).corrigir(item, RespostaAluno(item_id="e1", escolha="A", resolucao="..."))
+    correcao = Corretor(llm, UsageLedgerCallback()).corrigir(
+        item, RespostaAluno(item_id="e1", escolha="A", resolucao="...")
+    )
     assert correcao.correta is False and correcao.nota == 0.9
 
     # acerto sem resolução não gasta chamada de LLM
-    Corretor(llm).corrigir(item, RespostaAluno(item_id="e1", escolha="c"))
+    Corretor(llm, UsageLedgerCallback()).corrigir(item, RespostaAluno(item_id="e1", escolha="c"))
     assert len(llm.requests) == 1

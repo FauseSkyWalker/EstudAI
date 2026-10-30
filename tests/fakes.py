@@ -3,43 +3,126 @@
 import json
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs.chat_generation import ChatGeneration
+from langchain_core.outputs.chat_result import ChatResult
+from langchain_core.runnables import RunnableLambda
+from pydantic import PrivateAttr, ValidationError
 
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
-from estudai.ports.llm import LLMRequest, LLMResponse, Usage
 
-Handler = Callable[[LLMRequest], str | dict[str, Any]]
+Handler = Callable[..., str | dict[str, Any] | AIMessage]
 
 
-class ScriptedLLM:
-    """Responde por (caller, título do schema pedido). O handler pode ser uma função ou uma
-    lista de respostas consumidas em ordem (a última se repete)."""
+@dataclass
+class FakeRequest:
+    """Registro do que o modelo recebeu (para inspeção nos testes)."""
 
-    def __init__(self, handlers: dict[str | tuple[str, str], Handler | list], model: str = "fake") -> None:
-        self._handlers = handlers
-        self._model = model
-        self._contagem: dict[Any, int] = defaultdict(int)
-        self.requests: list[LLMRequest] = []
+    messages: list[Any]
+    caller: str = ""
+    schema_name: str | None = None
+
+
+class FakeChatModel(BaseChatModel):
+    """Modelo roteirizado por `caller` e, opcionalmente, por `(caller, schema)`.
+
+    O handler pode ser:
+    - uma string (JSON cru) ou um dict (serializado para JSON);
+    - um `AIMessage` (útil para tool calls);
+    - uma lista desses valores, consumida em ordem (o último se repete);
+    - uma função que recebe `FakeRequest`.
+    """
+
+    handlers: dict[Any, Any]
+    model_name: str = "fake"
+
+    _counters: dict[Any, int] = PrivateAttr(default_factory=lambda: defaultdict(int))
+    _requests: list[FakeRequest] = PrivateAttr(default_factory=list)
+
+    def __init__(self, handlers: dict[Any, Any], **kwargs: Any) -> None:
+        super().__init__(handlers=handlers, **kwargs)
 
     @property
-    def model(self) -> str:
-        return self._model
+    def _llm_type(self) -> str:
+        return "fake"
 
-    def complete(self, request: LLMRequest) -> LLMResponse:
-        self.requests.append(request)
-        titulo = (request.json_schema or {}).get("title", "")
-        chave = (request.caller, titulo) if (request.caller, titulo) in self._handlers else request.caller
-        handler = self._handlers[chave]
+    @property
+    def requests(self) -> list[FakeRequest]:
+        return self._requests
+
+    def _next_response(
+        self,
+        caller: str = "",
+        schema_name: str | None = None,
+        messages: list[Any] | None = None,
+        request: Any = None,
+    ) -> Any:
+        key = (caller, schema_name) if (caller, schema_name) in self.handlers else caller
+        if key not in self.handlers:
+            raise KeyError(f"sem resposta roteirizada para {key!r}; disponíveis: {list(self.handlers)}")
+
+        handler = self.handlers[key]
+        indice = self._counters[key]
+        self._counters[key] = indice + 1
+
         if isinstance(handler, list):
-            i = min(self._contagem[chave], len(handler) - 1)
-            saida = handler[i]
-        else:
-            saida = handler(request)
-        self._contagem[chave] += 1
-        texto = saida if isinstance(saida, str) else json.dumps(saida, ensure_ascii=False)
-        return LLMResponse(text=texto, model=self._model, usage=Usage(input_tokens=100, output_tokens=20))
+            return handler[min(indice, len(handler) - 1)]
+        if callable(handler):
+            return handler(request if request is not None else FakeRequest(messages or [], caller, schema_name))
+        return handler
+
+    @staticmethod
+    def _as_message(item: Any) -> AIMessage:
+        if isinstance(item, AIMessage):
+            return item
+        texto = item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
+        return AIMessage(
+            content=texto,
+            usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+        )
+
+    @staticmethod
+    def _caller_from_run(run_manager: Any) -> str:
+        metadata = getattr(run_manager, "metadata", None) or {}
+        if "caller" in metadata:
+            return metadata["caller"]
+        tags = getattr(run_manager, "tags", None) or []
+        return next((tag for tag in tags if tag), "")
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        caller = self._caller_from_run(run_manager)
+        schema_name = kwargs.get("schema_name")
+        message = self._as_message(self._next_response(caller, schema_name, messages))
+        self._requests.append(FakeRequest(messages=list(messages), caller=caller, schema_name=schema_name))
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    def with_structured_output(self, schema, *, include_raw=False, **kwargs):
+        """Roteia pelo nome do schema e valida a saída como o LangChain faria."""
+
+        def run(inp, config=None):
+            message = self.invoke(inp, config=config, schema_name=schema.__name__)
+            texto = message.content if isinstance(message.content, str) else json.dumps(message.content)
+            try:
+                parsed = schema.model_validate_json(texto)
+                erro = None
+            except (ValidationError, ValueError) as exc:
+                parsed, erro = None, exc
+            if include_raw:
+                return {"raw": message, "parsed": parsed, "parsing_error": erro}
+            if parsed is None:
+                raise erro
+            return parsed
+
+        return RunnableLambda(run)
+
+    def bind_tools(self, tools, **kwargs):
+        return self
 
 
 def react_final(entrada: dict) -> dict:

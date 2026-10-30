@@ -7,14 +7,27 @@ observações, permitindo que o modelo se corrija (fallback estruturado da Seç�
 """
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
-from estudai.agents.base import AgentOutputError, extract_json
+from estudai.agents.base import AgentOutputError
 from estudai.ports.llm import ChatMessage, LLMClient, LLMRequest
+
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+
+
+def _extract_json(text: str) -> str:
+    """Extrai o objeto JSON de uma resposta (tolera cercas markdown e texto ao redor)."""
+    if match := _FENCE.search(text):
+        text = match.group(1)
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end < start:
+        raise ValueError("nenhum objeto JSON encontrado na resposta")
+    return text[start : end + 1]
 
 T = TypeVar("T", bound=BaseModel)
 A = TypeVar("A", bound=BaseModel)
@@ -98,7 +111,7 @@ class ReActRunner:
             )
             messages.append(ChatMessage(role="assistant", content=response.text))
             try:
-                step = ReActStep.model_validate_json(extract_json(response.text))
+                step = ReActStep.model_validate_json(_extract_json(response.text))
             except (ValidationError, ValueError) as exc:
                 observacao = f"Formato inválido ({exc}). Responda com o JSON {{pensamento, acao, entrada}}."
             else:

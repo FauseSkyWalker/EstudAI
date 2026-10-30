@@ -1,5 +1,5 @@
 import pytest
-from fakes import ScriptedLLM
+from fakes import FakeChatModel
 from test_orquestrador import handlers, montar
 
 from estudai.application.orquestrador import ConfigSessao
@@ -54,7 +54,7 @@ def test_estatisticas():
 
 def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
     executor = SubprocessPythonExecutor(timeout_s=30)
-    juiz = ScriptedLLM(
+    juiz = FakeChatModel(
         {
             ("juiz", "VeredictoTransicao"): [
                 {"explicou_explicitamente": True, "validou_entendimento": True, "justificativa": ""}

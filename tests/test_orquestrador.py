@@ -1,7 +1,7 @@
 """Pipeline completo com LLM roteirizado e implementações reais de RAG, sandbox e persistência."""
 
 import pytest
-from fakes import ScriptedLearner, ScriptedLLM, react_final
+from fakes import FakeChatModel, ScriptedLearner, react_final
 
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
@@ -98,10 +98,10 @@ def montar(
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
     ledger = UsageLedger()
-    llm = TrackingLLMClient(ScriptedLLM(handlers(**kw)), ledger)
+    llm = TrackingLLMClient(FakeChatModel(handlers(**kw)), ledger)
 
     def validador(voto: str) -> ValidadorExercicios:
-        painel_llm = TrackingLLMClient(ScriptedLLM(handlers(voto_painel=voto)), ledger)
+        painel_llm = TrackingLLMClient(FakeChatModel(handlers(voto_painel=voto)), ledger)
         return ValidadorExercicios(
             PainelResolutores([Resolutor(painel_llm) for _ in range(3)]), VerificadorSimbolico(executor)
         )

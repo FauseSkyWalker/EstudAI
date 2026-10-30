@@ -1,5 +1,5 @@
 import pytest
-from fakes import ScriptedLLM
+from fakes import FakeChatModel
 
 from estudai.agents.resolutor import Resolutor
 from estudai.application.validacao import (
@@ -61,7 +61,7 @@ def test_verificacao_simbolica(verificador, item, status):
 
 def painel(*respostas: str) -> PainelResolutores:
     return PainelResolutores(
-        [Resolutor(ScriptedLLM({"painel_resolutores": [{"raciocinio": "", "resposta": r}]})) for r in respostas]
+        [Resolutor(FakeChatModel({"painel_resolutores": [{"raciocinio": "", "resposta": r}]})) for r in respostas]
     )
 
 
@@ -82,7 +82,7 @@ def test_divergencia_simbolica_descarta_mesmo_com_consenso(verificador):
 
 
 def test_voto_perdido_conta_como_discordancia(verificador):
-    falho = Resolutor(ScriptedLLM({"painel_resolutores": ["lixo"]}), max_repairs=0)
+    falho = Resolutor(FakeChatModel({"painel_resolutores": ["lixo"]}), max_repairs=0)
     p = PainelResolutores([*painel("B", "B")._resolutores, falho])
     resultado = ValidadorExercicios(p, verificador).validar(exercicio(codigo=None))
     assert len(resultado.votos) == 2 and not resultado.aprovado
