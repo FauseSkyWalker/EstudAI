@@ -12,6 +12,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
+from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import AgentOutputError
@@ -24,7 +25,6 @@ from estudai.evaluation.aluno_simulado import AlunoSimulado
 from estudai.evaluation.juizes import AvaliacaoItem, JuizItem, JuizTransicao, JuizTutoria, NotasTutoria
 from estudai.evaluation.personas import Persona
 from estudai.ports.knowledge import QuestionBank
-from estudai.ports.llm import LLMClient
 from estudai.ports.repositories import ProfileRepository
 
 
@@ -92,8 +92,8 @@ class Experimento:
         fabrica_orquestrador: FabricaOrquestrador,
         fabrica_perfis: FabricaPerfis,
         banco: QuestionBank,
-        llm_aluno: LLMClient | None,
-        juizes: list[LLMClient],
+        llm_aluno: BaseChatModel | None,
+        juizes: list[BaseChatModel],
         config_base: ConfigSessao,
         ciclos: int = 1,
         seed: int = 0,

@@ -4,6 +4,9 @@ Cada passo é um JSON `{pensamento, acao, entrada}`. Em vez de depender de funct
 nativo (que difere entre fornecedores), as ferramentas são descritas no prompt e as
 observações voltam como mensagens. Erros de ferramenta e argumentos inválidos viram
 observações, permitindo que o modelo se corrija (fallback estruturado da Seção 4).
+
+Por que não `with_structured_output(ReActStep)`: no modo estrito (json_schema), o campo aberto
+`entrada: dict[str, Any]` vira `additionalProperties: false` e o modelo só consegue devolver `{}`.
 """
 
 import json
@@ -12,10 +15,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
-from estudai.agents.base import AgentOutputError
-from estudai.ports.llm import ChatMessage, LLMClient, LLMRequest
+from estudai.agents.base import AgentOutputError, run_config
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
@@ -28,6 +33,14 @@ def _extract_json(text: str) -> str:
     if start == -1 or end < start:
         raise ValueError("nenhum objeto JSON encontrado na resposta")
     return text[start : end + 1]
+
+
+def _texto(content: str | list) -> str:
+    """Alguns provedores devolvem o conteúdo como lista de partes ({type: text, text: ...})."""
+    if isinstance(content, str):
+        return content
+    return "".join(p if isinstance(p, str) else p.get("text", "") for p in content)
+
 
 T = TypeVar("T", bound=BaseModel)
 A = TypeVar("A", bound=BaseModel)
@@ -76,9 +89,18 @@ este JSON Schema:
 
 
 class ReActRunner:
-    def __init__(self, llm: LLMClient, *, caller: str, max_steps: int = 6, max_obs_chars: int = 3000):
-        self._llm = llm
+    def __init__(
+        self,
+        model: BaseChatModel,
+        *,
+        caller: str,
+        usage_cb: BaseCallbackHandler | None = None,
+        max_steps: int = 6,
+        max_obs_chars: int = 3000,
+    ):
+        self._model = model
         self._caller = caller
+        self._config = run_config(caller, usage_cb)
         self._max_steps = max_steps
         self._max_obs_chars = max_obs_chars
 
@@ -88,30 +110,20 @@ class ReActRunner:
         task: str,
         tools: list[Tool],
         output_schema: type[T],
-        *,
-        temperature: float = 0.3,
     ) -> tuple[T, ReActTrace]:
         by_name = {t.name: t for t in tools}
         system_full = system + _INSTRUCOES.format(
             tools="\n".join(t.spec() for t in tools),
             output_schema=json.dumps(output_schema.model_json_schema(), ensure_ascii=False),
         )
-        messages = [ChatMessage(role="user", content=task)]
+        messages: list[BaseMessage] = [SystemMessage(system_full), HumanMessage(task)]
         trace = ReActTrace()
 
         for passo in range(self._max_steps):
-            response = self._llm.complete(
-                LLMRequest(
-                    system=system_full,
-                    messages=messages,
-                    json_schema=ReActStep.model_json_schema(),
-                    temperature=temperature,
-                    caller=self._caller,
-                )
-            )
-            messages.append(ChatMessage(role="assistant", content=response.text))
+            texto = _texto(self._model.invoke(messages, config=self._config).content)
+            messages.append(AIMessage(texto))
             try:
-                step = ReActStep.model_validate_json(_extract_json(response.text))
+                step = ReActStep.model_validate_json(_extract_json(texto))
             except (ValidationError, ValueError) as exc:
                 observacao = f"Formato inválido ({exc}). Responda com o JSON {{pensamento, acao, entrada}}."
             else:
@@ -130,10 +142,7 @@ class ReActRunner:
             restantes = self._max_steps - passo - 1
             aviso = " ÚLTIMO PASSO: responda agora com acao='final'." if restantes == 1 else ""
             messages.append(
-                ChatMessage(
-                    role="user",
-                    content=f"Observação: {observacao[: self._max_obs_chars]}\n(Passos restantes: {restantes}){aviso}",
-                )
+                HumanMessage(f"Observação: {observacao[: self._max_obs_chars]}\n(Passos restantes: {restantes}){aviso}")
             )
         raise AgentOutputError(f"{self._caller}: ReAct sem resposta final em {self._max_steps} passos")
 

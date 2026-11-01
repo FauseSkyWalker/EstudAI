@@ -5,6 +5,8 @@ de fato retornaram; o texto entregue é sempre o original da base. Ids inventado
 descartados, então a saída é fiel às fontes por construção.
 """
 
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from estudai.agents.react import ReActRunner, Tool
@@ -12,7 +14,6 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.material import PacoteMaterial, TipoDocumento, TrechoRecuperado
 from estudai.domain.mensagens import Papel
 from estudai.ports.knowledge import KnowledgeBase, SearchHit, SearchMode
-from estudai.ports.llm import LLMClient
 
 SYSTEM = """Você é o Agente de Conteúdo de um sistema de tutoria de Matemática e Física para
 vestibulares brasileiros. Sua função é buscar na base de conhecimento os trechos didáticos e
@@ -39,9 +40,10 @@ class AgenteConteudo:
 
     def __init__(
         self,
-        llm: LLMClient,
+        model: BaseChatModel,
         kb: KnowledgeBase,
         *,
+        usage_cb: BaseCallbackHandler | None = None,
         k: int = 4,
         min_score: float = 0.2,
         max_steps: int = 4,
@@ -49,7 +51,7 @@ class AgenteConteudo:
         self._kb = kb
         self._k = k
         self._min_score = min_score
-        self._runner = ReActRunner(llm, caller=self.papel.value, max_steps=max_steps)
+        self._runner = ReActRunner(model, caller=self.papel.value, usage_cb=usage_cb, max_steps=max_steps)
 
     def buscar(self, pedido: str, topico: Topico | None = None, incluir_questoes: bool = True) -> PacoteMaterial:
         vistos: dict[str, SearchHit] = {}

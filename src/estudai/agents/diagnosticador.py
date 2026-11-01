@@ -9,8 +9,8 @@
 import random
 from collections import defaultdict
 
-from langchain.chat_models import BaseChatModel
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import Agent, AgentOutputError, to_json
@@ -44,7 +44,7 @@ class Diagnosticador(Agent):
     def __init__(
         self,
         model: BaseChatModel,
-        usage_cb: BaseCallbackHandler,
+        usage_cb: BaseCallbackHandler | None = None,
         *,
         max_perguntas: int = 6,
         cobertura_minima: float = 0.8,

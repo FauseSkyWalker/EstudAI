@@ -46,6 +46,7 @@ class Rotulo(BaseModel):
 
         return self
 
+
 class ClassificadorQuestoes(Agent):
     papel = Papel.CLASSIFICADOR
 

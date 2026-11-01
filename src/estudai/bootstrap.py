@@ -9,6 +9,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
+from langchain_core.language_models import BaseChatModel
+
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
 from estudai.agents.diagnosticador import Diagnosticador
@@ -21,19 +23,38 @@ from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, 
 from estudai.application.telemetria import UsageLedger
 from estudai.application.validacao import PainelResolutores, ValidadorExercicios, VerificadorSimbolico
 from estudai.domain.curriculum import Disciplina
+from estudai.domain.mensagens import Papel
 from estudai.infrastructure.knowledge.database import KnowledgeDatabase
 from estudai.infrastructure.knowledge.embedders import SentenceTransformersEmbedder
 from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
-from estudai.infrastructure.llm.decorators import RetryingLLMClient, TrackingLLMClient
+from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
+from estudai.infrastructure.llm.factory import build_chat_model
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 from estudai.ports.knowledge import KnowledgeBase, QuestionBank
-from estudai.ports.llm import Embedder, LLMClient
+from estudai.ports.llm import Embedder
 from estudai.ports.repositories import ProfileRepository
 from estudai.ports.tools import CodeExecutor
 from estudai.settings import ModelConfig, Settings
 
 FonteExercicios = Literal["gerado", "banco"]
+
+# Temperatura é decisão de composição, por papel:
+# - resolutores > 0 para que três instâncias do mesmo modelo sejam amostras independentes
+#   (senão os votos ficam correlacionados e o consenso do painel perde valor);
+# - juízes e classificador em 0 para avaliações reprodutíveis.
+TEMPERATURA: dict[Papel, float] = {
+    Papel.DIAGNOSTICADOR: 0.2,
+    Papel.TUTOR: 0.4,
+    Papel.CONTEUDO: 0.3,
+    Papel.RESUMO: 0.2,
+    Papel.GERADOR_EXERCICIOS: 0.7,
+    Papel.CORRETOR: 0.2,
+    Papel.PAINEL_RESOLUTORES: 0.7,
+    Papel.CLASSIFICADOR: 0.0,
+    Papel.ALUNO_SIMULADO: 0.7,
+    Papel.JUIZ: 0.0,
+}
 
 
 def _segredo(valor) -> str:
@@ -46,41 +67,42 @@ def _segredo(valor) -> str:
 class Container:
     settings: Settings
     ledger: UsageLedger = field(default_factory=UsageLedger)
+    _modelos: dict = field(default_factory=dict, repr=False)
 
     # --- LLMs ---------------------------------------------------------------------------
 
-    def llm(self, config: ModelConfig, ledger: UsageLedger | None = None) -> LLMClient:
-        """`ledger` separado para chamadas fora do sistema (aluno simulado, juízes),
-        para que não contaminem as métricas de custo/latência do pipeline."""
-        s = self.settings
-        if config.provider == "gemini":
-            from estudai.infrastructure.llm.gemini import GeminiClient
-
-            base: LLMClient = GeminiClient(config.model, _segredo(s.gemini_api_key), timeout_s=s.llm_timeout_s)
-        else:
-            from estudai.infrastructure.llm.openai_compat import OpenAICompatClient
-
-            base = OpenAICompatClient(
-                config.model,
-                _segredo(s.openai_api_key),
+    def chat(self, config: ModelConfig, papel: Papel, ledger: UsageLedger | None = None) -> BaseChatModel:
+        """Modelo de chat para um papel. `ledger` separado serve para chamadas fora do sistema
+        (aluno simulado, juízes), para que não contaminem as métricas de custo/latência."""
+        ledger = ledger or self.ledger
+        chave = (config.model_dump_json(), TEMPERATURA[papel], id(ledger))
+        if chave not in self._modelos:
+            s = self.settings
+            chave_api = s.gemini_api_key if config.provider == "gemini" else s.openai_api_key
+            self._modelos[chave] = build_chat_model(
+                provider=config.provider,
+                model=config.model,
                 base_url=config.base_url,
+                api_key=_segredo(chave_api),
+                temperature=TEMPERATURA[papel],
+                max_retries=s.llm_max_attempts - 1,
                 timeout_s=s.llm_timeout_s,
-                json_mode=config.json_mode,
+                callbacks=[
+                    UsageLedgerCallback(
+                        ledger,
+                        model=config.model,
+                        price_in=config.price_input_per_mtok,
+                        price_out=config.price_output_per_mtok,
+                    )
+                ],
             )
-        return TrackingLLMClient(
-            RetryingLLMClient(base, max_attempts=s.llm_max_attempts),
-            ledger or self.ledger,
-            price_input_per_mtok=config.price_input_per_mtok,
-            price_output_per_mtok=config.price_output_per_mtok,
-        )
+        return self._modelos[chave]
 
-    @cached_property
-    def llm_fronteira(self) -> LLMClient:
-        return self.llm(self.settings.frontier)
+    def fronteira(self, papel: Papel) -> BaseChatModel:
+        return self.chat(self.settings.frontier, papel)
 
-    @cached_property
-    def llm_economico(self) -> LLMClient:
-        return self.llm(self.settings.economic)
+    def economico(self, papel: Papel) -> BaseChatModel:
+        return self.chat(self.settings.economic, papel)
 
     # --- dados e ferramentas -------------------------------------------------------------
 
@@ -114,21 +136,23 @@ class Container:
     @cached_property
     def conteudo(self) -> AgenteConteudo:
         s = self.settings
-        return AgenteConteudo(self.llm_economico, self.kb, k=s.kb_k, min_score=s.kb_min_score)
+        return AgenteConteudo(self.economico(Papel.CONTEUDO), self.kb, k=s.kb_k, min_score=s.kb_min_score)
 
     @cached_property
     def validador(self) -> ValidadorExercicios:
         s = self.settings
         configs = s.panel or [s.frontier] * s.tamanho_painel
-        # temperatura > 0 para que resolutores do mesmo modelo sejam amostras independentes
-        resolutores = [Resolutor(self.llm(c), temperature=0.7) for c in configs]
+        resolutores = [Resolutor(self.chat(c, Papel.PAINEL_RESOLUTORES)) for c in configs]
         return ValidadorExercicios(PainelResolutores(resolutores), VerificadorSimbolico(self.executor))
 
     def fornecedor(self, fonte: FonteExercicios, seed: int = 0) -> ExerciseProvider:
         if fonte == "banco":
             return BankExerciseProvider(self.banco, seed=seed)
         gerador = GeradorExercicios(
-            self.llm_fronteira, self.conteudo, self.executor, max_steps=self.settings.react_max_steps
+            self.fronteira(Papel.GERADOR_EXERCICIOS),
+            self.conteudo,
+            self.executor,
+            max_steps=self.settings.react_max_steps,
         )
         return GeneratedExerciseProvider(gerador, self.validador)
 
@@ -143,11 +167,13 @@ class Container:
             max_rodadas_tutoria=s.max_rodadas_tutoria, exercicios_por_sessao=s.exercicios_por_sessao
         )
         return Orquestrador(
-            diagnosticador=Diagnosticador(self.llm_fronteira, max_perguntas=s.max_perguntas_diagnostico),
-            tutores={d: Tutor(self.llm_fronteira, d) for d in Disciplina},
+            diagnosticador=Diagnosticador(
+                self.fronteira(Papel.DIAGNOSTICADOR), max_perguntas=s.max_perguntas_diagnostico
+            ),
+            tutores={d: Tutor(self.fronteira(Papel.TUTOR), d) for d in Disciplina},
             conteudo=self.conteudo,
-            resumo=AgenteResumo(self.llm_economico),
-            corretor=Corretor(self.llm_fronteira),
+            resumo=AgenteResumo(self.economico(Papel.RESUMO)),
+            corretor=Corretor(self.fronteira(Papel.CORRETOR)),
             fornecedor=self.fornecedor(fonte, seed=config.seed),
             validador=self.validador,
             perfis=perfis or self.perfis(),

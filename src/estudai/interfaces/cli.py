@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from estudai.domain.curriculum import Topico
+from estudai.domain.mensagens import Papel
 
 # Em consoles/redirecionamentos não-UTF-8 (cp1252 no Windows), substitui em vez de quebrar
 for _stream in (sys.stdout, sys.stderr):
@@ -62,7 +63,7 @@ def ingest_questions(
 
     questoes, stats = ingerir_questoes(
         brutas,
-        ClassificadorQuestoes(container.llm_economico, temperature=0.0),
+        ClassificadorQuestoes(container.economico(Papel.CLASSIFICADOR)),
         RotuloCache(s.rotulos_cache_path),
         bateria_por_topico=bateria,
         workers=workers,
@@ -177,8 +178,8 @@ def experimento(
         fabrica_orquestrador=lambda cfg, fonte, perfis: container.orquestrador(cfg, fonte, perfis),
         fabrica_perfis=perfis_novos,
         banco=container.banco,
-        llm_aluno=container.llm(s.student or s.economic, ledger_avaliacao),
-        juizes=[container.llm(j, ledger_avaliacao) for j in s.judges],
+        llm_aluno=container.chat(s.student or s.economic, Papel.ALUNO_SIMULADO, ledger_avaliacao),
+        juizes=[container.chat(j, Papel.JUIZ, ledger_avaliacao) for j in s.judges],
         config_base=ConfigSessao(
             max_rodadas_tutoria=s.max_rodadas_tutoria, exercicios_por_sessao=s.exercicios_por_sessao
         ),

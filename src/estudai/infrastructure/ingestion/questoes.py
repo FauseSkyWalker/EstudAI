@@ -8,10 +8,11 @@ bateria fixa de pré/pós-teste -> grava `questoes.jsonl`.
 import json
 import random
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from openai import OpenAIError
 from pydantic import ValidationError
 from tqdm import tqdm
 
@@ -20,7 +21,6 @@ from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.questoes import Particao, Questao
 from estudai.infrastructure.ingestion.classificador import ClassificadorQuestoes, Rotulo
 from estudai.infrastructure.ingestion.sources import QuestaoBruta
-from estudai.ports.llm import LLMError
 
 
 class RotuloCache:
@@ -107,7 +107,7 @@ def ingerir_questoes(
             return b, rotulo
         try:
             return b, classificador.classificar(b)
-        except (AgentOutputError, LLMError) as e:
+        except (AgentOutputError, OpenAIError) as e:  # falha após os retries do cliente
             print("Erro ao rotular: ", e)
             return b, None
 

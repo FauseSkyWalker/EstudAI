@@ -1,5 +1,10 @@
+from typing import Any
+
+
 class SentenceTransformersEmbedder:
-    def __init__(self, model_name: str, query_params: dict[str, any] = None, doc_params: dict[str, any] = None):
+    def __init__(
+        self, model_name: str, query_params: dict[str, Any] | None = None, doc_params: dict[str, Any] | None = None
+    ):
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name, trust_remote_code=True)

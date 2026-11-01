@@ -8,6 +8,8 @@ O item ainda passa pelo painel de resolutores antes de ser entregue (application
 
 from uuid import uuid4
 
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import to_json
@@ -17,7 +19,6 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
 from estudai.domain.planejamento import ItemPlanejado
 from estudai.domain.questoes import Exercicio, OrigemItem
-from estudai.ports.llm import LLMClient
 from estudai.ports.tools import CodeExecutor
 
 SYSTEM = """Você é o Agente Gerador de Exercícios de um sistema de tutoria para vestibulares
@@ -56,15 +57,16 @@ class GeradorExercicios:
 
     def __init__(
         self,
-        llm: LLMClient,
+        model: BaseChatModel,
         conteudo: AgenteConteudo,
         executor: CodeExecutor,
         *,
+        usage_cb: BaseCallbackHandler | None = None,
         max_steps: int = 6,
     ) -> None:
         self._conteudo = conteudo
         self._executor = executor
-        self._runner = ReActRunner(llm, caller=self.papel.value, max_steps=max_steps)
+        self._runner = ReActRunner(model, caller=self.papel.value, usage_cb=usage_cb, max_steps=max_steps)
 
     def gerar(self, perfil: dict, topico: Topico, plano: ItemPlanejado, evitar: list[str]) -> Exercicio:
         tools = [self._ferramenta_conteudo(topico), self._ferramenta_python()]
@@ -74,7 +76,7 @@ class GeradorExercicios:
             f"Perfil do aluno:\n{to_json(perfil)}\n"
             "Não repita estes enunciados já usados:\n" + ("\n".join(f"- {e[:160]}" for e in evitar) or "(nenhum)")
         )
-        rascunho, _ = self._runner.run(SYSTEM, tarefa, tools, RascunhoExercicio, temperature=0.7)
+        rascunho, _ = self._runner.run(SYSTEM, tarefa, tools, RascunhoExercicio)
         return Exercicio(
             id=f"gen-{uuid4().hex[:8]}",
             topico=topico,

@@ -61,7 +61,7 @@ corretamente). Seja rigoroso: menção superficial não conta como explicação.
 
     def avaliar(self, transcricao: TranscricaoTutoria, conceito: str) -> VeredictoTransicao:
         prompt = f"Conceito: {conceito}\n\nDiálogo:\n{transcricao.como_texto()}"
-        return self._ask(self.SYSTEM, prompt, VeredictoTransicao, temperature=0.0)
+        return self._ask(self.SYSTEM, prompt, VeredictoTransicao)
 
 
 class JuizTutoria(Agent):
@@ -80,7 +80,7 @@ Use a escala inteira; 3 = adequado, 5 = excelente sem ressalvas."""
             f"Material-fonte:\n{material.como_contexto(max_chars=4000)}\n\n"
             f"Diálogo:\n{transcricao.como_texto()}"
         )
-        return self._ask(self.SYSTEM, prompt, NotasTutoria, temperature=0.0)
+        return self._ask(self.SYSTEM, prompt, NotasTutoria)
 
 
 class JuizItem(Agent):
@@ -95,4 +95,4 @@ mais de uma correta, dados faltantes, enunciado insolúvel)."""
             f"Tópico: {item.topico.value}; conceitos-alvo: {item.conceitos}; "
             f"dificuldade-alvo: {item.dificuldade_alvo.value}\n\n{item.formatar(com_gabarito=True)}"
         )
-        return self._ask(self.SYSTEM, prompt, AvaliacaoItem, temperature=0.0)
+        return self._ask(self.SYSTEM, prompt, AvaliacaoItem)

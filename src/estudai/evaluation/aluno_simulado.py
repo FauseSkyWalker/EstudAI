@@ -13,6 +13,7 @@ import hashlib
 import random
 import time
 
+from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
 from estudai.agents.base import Agent, AgentOutputError, to_json
@@ -22,7 +23,6 @@ from estudai.domain.mensagens import Papel
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 from estudai.evaluation.personas import Persona
-from estudai.ports.llm import LLMClient
 
 SYSTEM = """Você interpreta um(a) estudante de ensino médio brasileiro(a) se preparando para o vestibular.
 Persona: {descricao}
@@ -46,9 +46,9 @@ class _Resolucao(BaseModel):
 class AlunoSimulado(Agent):
     papel = Papel.ALUNO_SIMULADO
 
-    def __init__(self, persona: Persona, topico: Topico, llm: LLMClient | None = None, *, seed: int = 0):
+    def __init__(self, persona: Persona, topico: Topico, llm: BaseChatModel | None = None, *, seed: int = 0):
         """Sem `llm`, o aluno ainda responde itens (DINA), mas sem resoluções/falas geradas."""
-        super().__init__(llm, temperature=0.7)  # type: ignore[arg-type]
+        super().__init__(llm)  # type: ignore[arg-type]
         self.persona = persona
         self.topico = topico
         self.dominados: set[str] = set(persona.dominados.get(topico, []))

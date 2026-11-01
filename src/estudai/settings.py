@@ -1,7 +1,7 @@
 """Configuração via variáveis de ambiente / `.env` (prefixo ESTUDAI_, aninhamento com `__`)."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,7 +11,6 @@ class ModelConfig(BaseModel):
     provider: Literal["gemini", "openai_compat"] = "gemini"
     model: str
     base_url: str | None = None
-    json_mode: bool = True
     price_input_per_mtok: float = 0.0
     price_output_per_mtok: float = 0.0
 
@@ -32,8 +31,8 @@ class Settings(BaseSettings):
 
     embedding_provider: Literal["gemini", "sentencetransformers"] = "gemini"
     embedding_model: str = "gemini-embedding-001"
-    embedding_query_params: dict[str, any] = {}
-    embedding_doc_params: dict[str, any] = {}
+    embedding_query_params: dict[str, Any] = {}
+    embedding_doc_params: dict[str, Any] = {}
 
     data_dir: Path = Path("data")
     llm_timeout_s: float = 180.0

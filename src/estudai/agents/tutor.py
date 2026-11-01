@@ -1,7 +1,7 @@
 """Agente Tutor por Disciplina (modelo de fronteira): uma instância para Matemática e outra para Física."""
 
-from langchain.chat_models import BaseChatModel
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseChatModel
 
 from estudai.agents.base import Agent, to_json
 from estudai.domain.curriculum import Disciplina
@@ -37,8 +37,10 @@ Regras:
 class Tutor(Agent):
     papel = Papel.TUTOR
 
-    def __init__(self, model: BaseChatModel, usage_cb: BaseCallbackHandler, disciplina: Disciplina, **kw):
-        super().__init__(model, usage_cb, temperature=0.4, **kw)
+    def __init__(
+        self, model: BaseChatModel, disciplina: Disciplina, *, usage_cb: BaseCallbackHandler | None = None, **kw
+    ):
+        super().__init__(model, usage_cb, **kw)
         self.disciplina = disciplina
         self._system = SYSTEM.format(disciplina=disciplina.value, orientacao=_ORIENTACOES[disciplina])
 
