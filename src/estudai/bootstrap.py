@@ -151,6 +151,15 @@ class Container:
     def executor(self) -> CodeExecutor:
         return SubprocessPythonExecutor(timeout_s=self.settings.sandbox_timeout_s)
 
+    def dados_faltando(self) -> list[tuple[Path, str]]:
+        """(arquivo ausente, comando que o gera) — para as interfaces falharem cedo, antes de gastar LLM."""
+        s = self.settings
+        necessarios = [
+            (s.questoes_path, "uv run estudai ingest-questions"),
+            (s.knowledge_db_uri, "uv run estudai build-index"),
+        ]
+        return [(caminho, comando) for caminho, comando in necessarios if not caminho.exists()]
+
     def perfis(self, raiz: Path | None = None) -> ProfileRepository:
         return JsonProfileRepository(raiz or self.settings.profiles_dir)
 

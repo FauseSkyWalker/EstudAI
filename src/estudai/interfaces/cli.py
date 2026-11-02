@@ -40,12 +40,7 @@ def _container():
 
 def _exigir_dados(container) -> None:
     """Falha cedo, antes de gastar chamadas de LLM, se a ingestão ou o índice não foram feitos."""
-    s = container.settings
-    faltando = [
-        (s.questoes_path, "uv run estudai ingest-questions"),
-        (s.knowledge_db_uri, "uv run estudai build-index"),
-    ]
-    faltando = [(caminho, comando) for caminho, comando in faltando if not caminho.exists()]
+    faltando = container.dados_faltando()
     for caminho, comando in faltando:
         console.print(f"[red]{caminho} não existe.[/red] Rode antes: [bold]{comando}[/bold]")
     if faltando:
@@ -251,6 +246,21 @@ def relatorio(arquivo: Path, orcamento_usd: Annotated[float | None, typer.Option
     for nome, ok in rel.criterios.items():
         marca = {True: "[green]atingido[/green]", False: "[red]não atingido[/red]", None: "[dim]n/a[/dim]"}[ok]
         console.print(f"Critério {nome}: {marca}")
+
+
+@app.command()
+def web(porta: int = 8501) -> None:
+    """Abre a interface web (Streamlit) da sessão de estudo no navegador."""
+    import importlib.util
+    import subprocess
+
+    if importlib.util.find_spec("streamlit") is None:
+        console.print("[red]Streamlit não instalado.[/red] Rode: [bold]uv sync --extra ingest --extra web[/bold] (o uv sync remove os extras não listados)")
+        raise typer.Exit(code=1)
+    app_web = Path(__file__).with_name("web") / "app.py"
+    raise typer.Exit(
+        subprocess.call([sys.executable, "-m", "streamlit", "run", str(app_web), "--server.port", str(porta)])
+    )
 
 
 @app.command("verificar-modelos")

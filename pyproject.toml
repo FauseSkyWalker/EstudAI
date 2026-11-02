@@ -21,6 +21,8 @@ dependencies = [
     "langgraph>=1.2.18",
     "langchain>=1.4.7",
     "langchain-openai>=1.7.3",
+    # embeddings padrão (busca semântica do Agente de Conteúdo): necessário mesmo sem usar o Gemini para chat
+    "google-genai>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +33,8 @@ embeddings = [
 gemini = ["google-genai>=1.0"]
 openai = ["openai>=1.40"]
 ingest = ["datasets>=2.19"]
-all = ["estudai[embeddings,gemini,openai,ingest]"]
+web = ["streamlit>=1.40"]
+all = ["estudai[embeddings,gemini,openai,ingest,web]"]
 
 [tool.uv.sources]
 torch = [

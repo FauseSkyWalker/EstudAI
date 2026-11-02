@@ -74,7 +74,8 @@ atualização            Diagnosticador usa as correções → perfil v+1 → re
 ## Instalação
 
 ```bash
-uv sync --all-extras          # ou: uv sync --extra gemini --extra openai --extra ingest
+uv sync --extra ingest --extra web   # liste todos os extras: o uv sync remove os que ficarem de fora
+                                     # (--all-extras também instala torch/sentence-transformers, pesado)
 cp .env.example .env          # preencha chaves e modelos
 ```
 
@@ -90,6 +91,7 @@ uv run estudai ingest-wikibooks               # baixa e fatia o material curado
 uv run estudai build-index                    # base vetorial (sem a bateria de avaliação)
 
 uv run estudai estudar --aluno ana --topico funcoes     # sessão interativa
+uv run estudai web                                      # a mesma sessão no navegador
 uv run estudai perfil ana                               # histórico de versões do perfil
 
 uv run estudai experimento --saida results/exp1.jsonl   # 3 condições × 3 personas × 4 tópicos
