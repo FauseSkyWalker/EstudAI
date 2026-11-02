@@ -8,13 +8,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
-    provider: Literal["gemini", "openai_compat"] = "gemini"
+    # openrouter: qualquer modelo do OpenRouter (model = "fornecedor/modelo", ex. "google/gemini-3-flash-preview")
+    # claude_cli: usa o Claude Code CLI instalado (`claude -p`) e a autenticação dele, sem chave no .env
+    provider: Literal["gemini", "openai_compat", "openrouter", "claude_cli"] = "gemini"
     model: str
     base_url: str | None = None
     price_input_per_mtok: float = 0.0
     price_output_per_mtok: float = 0.0
     # Limite do fornecedor (ex.: plano gratuito do Gemini 3 Flash = 5/min). None = sem limitador.
     requests_per_minute: float | None = None
+    # Esforço de raciocínio (só claude_cli): low | medium | high | xhigh | max. None = padrão do modelo.
+    effort: str | None = None
+    # Como pedir JSON ao modelo (provedores compatíveis com OpenAI). Nem todo modelo do OpenRouter ou
+    # endpoint próprio aceita json_schema; nesses, use function_calling ou json_mode.
+    structured_output_method: Literal["json_schema", "function_calling", "json_mode"] = "json_schema"
 
 
 class Settings(BaseSettings):
@@ -30,6 +37,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
+    openrouter_api_key: SecretStr | None = None
 
     embedding_provider: Literal["gemini", "sentencetransformers"] = "gemini"
     embedding_model: str = "gemini-embedding-001"

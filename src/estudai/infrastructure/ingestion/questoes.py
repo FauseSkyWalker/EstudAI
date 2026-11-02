@@ -22,6 +22,7 @@ from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.questoes import Particao, Questao
 from estudai.infrastructure.ingestion.classificador import ClassificadorQuestoes, Rotulo
 from estudai.infrastructure.ingestion.sources import QuestaoBruta
+from estudai.infrastructure.llm.claude_cli import ClaudeCLIError
 
 
 class RotuloCache:
@@ -129,7 +130,7 @@ def ingerir_questoes(
             elif not cota_esgotada.is_set():
                 print("Limite por minuto atingido (429) após os retries; configure REQUESTS_PER_MINUTE no .env.")
             return b, None
-        except (AgentOutputError, OpenAIError) as e:  # falha após os retries do cliente
+        except (AgentOutputError, OpenAIError, ClaudeCLIError) as e:  # falha após os retries do cliente
             print("Erro ao rotular: ", e)
             return b, None
 

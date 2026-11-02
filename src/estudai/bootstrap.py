@@ -80,12 +80,18 @@ class Container:
         chave = (config.model_dump_json(), TEMPERATURA[papel], id(ledger))
         if chave not in self._modelos:
             s = self.settings
-            chave_api = s.gemini_api_key if config.provider == "gemini" else s.openai_api_key
+            chave_api = {
+                "gemini": s.gemini_api_key,
+                "openai_compat": s.openai_api_key,
+                "openrouter": s.openrouter_api_key,
+            }.get(config.provider)
             self._modelos[chave] = build_chat_model(
                 provider=config.provider,
                 model=config.model,
                 base_url=config.base_url,
-                api_key=_segredo(chave_api),
+                api_key=None if config.provider == "claude_cli" else _segredo(chave_api),
+                effort=config.effort,
+                structured_output_method=config.structured_output_method,
                 temperature=TEMPERATURA[papel],
                 max_retries=s.llm_max_attempts - 1,
                 timeout_s=s.llm_timeout_s,

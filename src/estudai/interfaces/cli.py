@@ -38,6 +38,20 @@ def _container():
     return Container(Settings())
 
 
+def _exigir_dados(container) -> None:
+    """Falha cedo, antes de gastar chamadas de LLM, se a ingestão ou o índice não foram feitos."""
+    s = container.settings
+    faltando = [
+        (s.questoes_path, "uv run estudai ingest-questions"),
+        (s.knowledge_db_uri, "uv run estudai build-index"),
+    ]
+    faltando = [(caminho, comando) for caminho, comando in faltando if not caminho.exists()]
+    for caminho, comando in faltando:
+        console.print(f"[red]{caminho} não existe.[/red] Rode antes: [bold]{comando}[/bold]")
+    if faltando:
+        raise typer.Exit(code=1)
+
+
 @app.command("ingest-questions")
 def ingest_questions(
     fontes: Annotated[list[str], typer.Option(help="bluex, enem_challenge, enem_2022_2024")] = [
@@ -127,6 +141,7 @@ def estudar(
     from estudai.interfaces.console import ConsoleLearner
 
     container = _container()
+    _exigir_dados(container)
     orquestrador = container.orquestrador()
     learner = ConsoleLearner(console)
     for i in range(1, ciclos + 1):
@@ -165,6 +180,7 @@ def experimento(
     from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 
     container = _container()
+    _exigir_dados(container)
     s = container.settings
     ledger_avaliacao = UsageLedger()  # aluno simulado e juízes não contam no custo do sistema
     perfis_raiz = saida.parent / f"{saida.stem}_perfis"
@@ -235,6 +251,48 @@ def relatorio(arquivo: Path, orcamento_usd: Annotated[float | None, typer.Option
     for nome, ok in rel.criterios.items():
         marca = {True: "[green]atingido[/green]", False: "[red]não atingido[/red]", None: "[dim]n/a[/dim]"}[ok]
         console.print(f"Critério {nome}: {marca}")
+
+
+@app.command("verificar-modelos")
+def verificar_modelos() -> None:
+    """Faz uma chamada estruturada mínima em cada modelo configurado (econômico, fronteira, painel,
+    juízes, aluno simulado) para validar chaves, ids e saída estruturada antes de rodar o pipeline."""
+    import time
+
+    from pydantic import BaseModel
+
+    from estudai.agents.base import run_config
+    from estudai.application.telemetria import UsageLedger
+
+    class Resposta(BaseModel):
+        resultado: int
+
+    container = _container()
+    s = container.settings
+    papeis = [("economic", s.economic), ("frontier", s.frontier), *[("panel", c) for c in s.panel or []]]
+    papeis += [("judge", j) for j in s.judges] + ([("student", s.student)] if s.student else [])
+    vistos, falhas = set(), 0
+    for nome, cfg in papeis:
+        chave = (cfg.provider, cfg.model, cfg.base_url)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        ledger, inicio = UsageLedger(), time.perf_counter()
+        try:
+            modelo = container.chat(cfg, Papel.CLASSIFICADOR, ledger=ledger)
+            r = modelo.with_structured_output(Resposta).invoke("Quanto é 6 * 7?", config=run_config("verificacao"))
+            ok = r.resultado == 42
+            total = ledger.summary().total
+            detalhe = f"{time.perf_counter() - inicio:.1f}s · US$ {total.cost_usd:.4f}" + (
+                "" if ok else f" · respondeu {r}"
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnóstico: mostra qualquer falha
+            ok, detalhe = False, f"{type(exc).__name__}: {str(exc)[:200]}"
+        falhas += not ok
+        marca = "[green]OK[/green]" if ok else "[red]FALHOU[/red]"
+        console.print(f"{marca} {nome:9} {cfg.provider}/{cfg.model}  {detalhe}")
+    if falhas:
+        raise typer.Exit(code=1)
 
 
 def _fmt(valor) -> str:

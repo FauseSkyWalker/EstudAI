@@ -46,9 +46,17 @@ class UsageLedgerCallback(BaseCallbackHandler):
                 input_tokens=inp,
                 output_tokens=out,
                 latency_s=time.perf_counter() - start,
-                cost_usd=(inp * self._price_in + out * self._price_out) / 1e6,
+                cost_usd=self._custo(response, message, inp, out),
             )
         )
+
+    def _custo(self, response, message, inp: int, out: int) -> float:
+        # custo real informado pelo provedor quando existe (Claude CLI: cost_usd; OpenRouter: usage.cost);
+        # nos demais, calcula pela tabela de preços configurada
+        informado = (getattr(message, "response_metadata", None) or {}).get("cost_usd")
+        if informado is None:
+            informado = ((response.llm_output or {}).get("token_usage") or {}).get("cost")
+        return float(informado) if informado is not None else (inp * self._price_in + out * self._price_out) / 1e6
 
     def on_llm_error(self, error, *, run_id, **kwargs):
         # sem isto, chamadas que falham (após os retries do cliente) ficariam presas em `_starts`

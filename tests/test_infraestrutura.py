@@ -155,3 +155,94 @@ def test_bateria_nunca_esvazia_o_banco():
 
     muitas = [questao(i, [conceitos[i % len(conceitos)]]) for i in range(30)]
     assert [q.particao for q in separar_bateria(muitas, por_topico=8)].count(Particao.BATERIA) == 8
+
+
+def test_factory_openrouter_endpoint_custo_e_metodo_estruturado(monkeypatch):
+    from langchain_openai import ChatOpenAI
+
+    from estudai.infrastructure.llm.factory import OPENROUTER_BASE_URL
+
+    m = build_chat_model(
+        provider="openrouter", model="google/gemini-3-flash-preview", api_key="k", temperature=0.2,
+        max_retries=2, timeout_s=30, structured_output_method="function_calling",
+    )  # fmt: skip
+    assert m.openai_api_base == OPENROUTER_BASE_URL
+    assert m.extra_body == {"usage": {"include": True}} and m.default_headers["X-Title"] == "EstudAI"
+
+    metodos = []
+    monkeypatch.setattr(ChatOpenAI, "with_structured_output", lambda self, schema=None, **kw: metodos.append(kw))
+    m.with_structured_output(dict)  # os agentes não passam `method`: vale o configurado
+    m.with_structured_output(dict, method="json_mode")  # um pedido explícito ainda prevalece
+    assert [k["method"] for k in metodos] == ["function_calling", "json_mode"]
+
+
+def test_callback_usa_custo_informado_pelo_openrouter():
+    from uuid import uuid4
+
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    ledger = UsageLedger()
+    cb, run_id = UsageLedgerCallback(ledger, price_in=100.0, price_out=100.0), uuid4()
+    cb.on_chat_model_start({}, [[]], run_id=run_id, metadata={"caller": "tutor"})
+    msg = AIMessage("ok", usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15})
+    cb.on_llm_end(
+        LLMResult(
+            generations=[[ChatGeneration(message=msg)]],
+            llm_output={"token_usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.00042}},
+        ),
+        run_id=run_id,
+    )
+    assert ledger.summary().total.cost_usd == pytest.approx(0.00042)  # e não a tabela de preços
+
+
+def test_openrouter_exige_chave():
+    from estudai.bootstrap import Container
+    from estudai.domain.mensagens import Papel
+    from estudai.settings import ModelConfig, Settings
+
+    cfg = ModelConfig(provider="openrouter", model="google/gemini-3-flash-preview")
+    with pytest.raises(RuntimeError, match="credencial ausente"):
+        Container(Settings(_env_file=None, economic=cfg)).economico(Papel.RESUMO)
+    s = Settings(_env_file=None, economic=cfg, openrouter_api_key="k")
+    assert Container(s).economico(Papel.RESUMO).openai_api_base.startswith("https://openrouter.ai")
+
+
+def test_bluex_troca_marcador_de_imagem_pela_legenda():
+    from estudai.infrastructure.ingestion.sources import _substituir_imagens_bluex
+
+    texto, usadas = _substituir_imagens_bluex("Veja:\n[IMAGE 0]\nE [IMAGE 1]", ["gráfico de f", ""], ["", "tabela"])
+    assert texto == "Veja:\n[Figura: gráfico de f]\nE [Figura: tabela]"  # contexto primeiro, cega como reserva
+    assert usadas == ["gráfico de f", "tabela"]
+    sem_legenda, _ = _substituir_imagens_bluex("Veja [IMAGE 2]", ["a"], ["b"])
+    assert "[IMAGE 2]" in sem_legenda  # marcador sem legenda fica, e a ingestão descarta a questão
+
+
+def _erro_gemini(mensagem: str):
+    from google.genai import errors
+
+    return errors.ClientError(429, {"error": {"code": 429, "message": mensagem, "status": "RESOURCE_EXHAUSTED"}})
+
+
+def test_embedder_gemini_espera_a_cota_por_minuto_e_desiste_da_diaria():
+    from estudai.infrastructure.llm.gemini import GeminiEmbedder
+
+    esperas = []
+    embedder = GeminiEmbedder("m", "k", sleep=esperas.append)
+    respostas = iter([_erro_gemini("per minute limit exceeded. Please retry in 40.7s."), "ok"])
+
+    def chamada():
+        r = next(respostas)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    assert embedder._com_espera(chamada) == "ok"
+    assert esperas == [pytest.approx(41.7)]
+
+    def diaria():
+        raise _erro_gemini("Embed content requests per day limit exceeded. Please retry in 5s.")
+
+    with pytest.raises(Exception, match="per day"):
+        embedder._com_espera(diaria)
+    assert len(esperas) == 1  # a cota diária não é esperada

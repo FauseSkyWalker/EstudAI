@@ -14,6 +14,7 @@ from estudai.domain.curriculum import Disciplina
 
 PLACEHOLDER = "[[placeholder]]"
 _PREFIXO_ALTERNATIVA = re.compile(r"^\s*\(?[a-eA-E]\)\s*")
+_MARCADOR_IMAGEM = re.compile(r"\[IMAGE (\d+)\]")
 
 
 class QuestaoBruta(BaseModel):
@@ -48,19 +49,38 @@ def carregar_bluex() -> Iterator[QuestaoBruta]:
         if indicada is None or row["alternatives_type"] != "string" or not row["answer"]:
             continue
 
-        legendas = list(row.get("blind_captions") or []) + list(row.get("context_captions") or [])
-
+        enunciado, legendas = _substituir_imagens_bluex(
+            row["question"], list(row.get("context_captions") or []), list(row.get("blind_captions") or [])
+        )
         yield QuestaoBruta(
             id=f"BLUEX#{row['id']}",
             fonte="bluex",
             ano=_ano(row["id"]),
-            enunciado=row["question"],
+            enunciado=enunciado,
             alternativas=[_PREFIXO_ALTERNATIVA.sub("", a).strip() for a in row["alternatives"]],
             gabarito=row["answer"],
             disciplina_indicada=indicada,
             descricoes_imagens=legendas,
-            depende_imagem_sem_descricao=bool(row["has_associated_images"]) and not legendas,
+            # sobrou marcador sem legenda, ou há imagem sem nenhum marcador/legenda
+            depende_imagem_sem_descricao=bool(_MARCADOR_IMAGEM.search(enunciado))
+            or (bool(row["has_associated_images"]) and not legendas),
         )
+
+
+def _substituir_imagens_bluex(enunciado: str, contexto: list[str], cegas: list[str]) -> tuple[str, list[str]]:
+    """Troca cada `[IMAGE i]` pela legenda da imagem i. A legenda de contexto (gerada vendo o
+    enunciado) é preferida à "cega"; marcadores sem legenda permanecem, e a questão é descartada."""
+    usadas: list[str] = []
+
+    def legenda(match: re.Match) -> str:
+        i = int(match.group(1))
+        texto = (contexto[i] if i < len(contexto) else "") or (cegas[i] if i < len(cegas) else "")
+        if not texto:
+            return match.group(0)
+        usadas.append(texto)
+        return f"[Figura: {texto.strip()}]"
+
+    return _MARCADOR_IMAGEM.sub(legenda, enunciado), usadas or contexto or cegas
 
 
 def carregar_enem_challenge() -> Iterator[QuestaoBruta]:
