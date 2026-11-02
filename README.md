@@ -79,21 +79,77 @@ uv sync --extra ingest --extra web   # liste todos os extras: o uv sync remove o
 cp .env.example .env          # preencha chaves e modelos
 ```
 
-O modelo de fronteira (Muse Spark 1.3) é acessado por um endpoint compatível com a API da
-OpenAI: preencha `ESTUDAI_FRONTIER__BASE_URL` e `ESTUDAI_FRONTIER__MODEL`. Para testar o
-pipeline só com Gemini, use `ESTUDAI_FRONTIER__PROVIDER=gemini` e um modelo Gemini.
+### Modelos
 
-## Uso
+Cada nível (`ECONOMIC`, `FRONTIER`, `JUDGES`) escolhe um provedor no `.env` (exemplos comentados
+no `.env.example`):
+
+| `PROVIDER` | Quando usar | Chave |
+|---|---|---|
+| `openrouter` | Mais simples: a configuração da metodologia (Gemini 3 Flash + Muse Spark 1.3) com uma chave só | `ESTUDAI_OPENROUTER_API_KEY` |
+| `gemini` | Direto na API do Google (o plano gratuito tem cotas muito baixas) | `ESTUDAI_GEMINI_API_KEY` |
+| `openai_compat` | Qualquer endpoint compatível com a OpenAI (preencha `BASE_URL`) | `ESTUDAI_OPENAI_API_KEY` |
+| `claude_cli` | Usa o Claude Code CLI instalado e logado na máquina | nenhuma |
+
+Os embeddings da busca usam o Gemini (`ESTUDAI_GEMINI_API_KEY`) qualquer que seja o provedor de chat.
+Depois de configurar, confira se todos os modelos respondem:
 
 ```bash
-uv run estudai ingest-questions               # baixa, filtra e rotula (modelo econômico; retomável via cache)
-uv run estudai ingest-wikibooks               # baixa e fatia o material curado
+uv run estudai verificar-modelos
+```
+
+## Preparar os dados (uma vez)
+
+```bash
+uv run estudai ingest-wikibooks               # baixa e fatia o material didático curado
+uv run estudai ingest-questions               # baixa, filtra e rotula as questões (retomável via cache)
 uv run estudai build-index                    # base vetorial (sem a bateria de avaliação)
+```
 
-uv run estudai estudar --aluno ana --topico funcoes     # sessão interativa
-uv run estudai web                                      # a mesma sessão no navegador
-uv run estudai perfil ana                               # histórico de versões do perfil
+Para um teste rápido e barato, use `ingest-questions --limite 80`. As interfaces abaixo se recusam
+a iniciar (e dizem qual comando falta) enquanto o banco de questões ou o índice não existirem.
 
+## Interfaces
+
+As duas interfaces rodam o mesmo ciclo — diagnóstico (só na primeira sessão do aluno), tutoria,
+resumo, exercícios com correção e perfil atualizado — e salvam o mesmo perfil: dá para começar
+numa e continuar na outra usando o mesmo nome de aluno.
+
+### Navegador (Streamlit)
+
+```bash
+uv run estudai web                 # abre http://localhost:8501
+uv run estudai web --porta 8502    # se a porta estiver ocupada
+```
+
+1. Na barra lateral, digite seu nome (identifica o perfil) e escolha o tópico.
+2. Clique em **Iniciar sessão**. As questões aparecem como formulário (alternativas + resolução
+   opcional) e a tutoria como chat; enquanto os agentes trabalham, a tela mostra
+   "⏳ Os agentes estão trabalhando…" e se atualiza sozinha.
+3. No fim do ciclo aparecem acertos, nível estimado, relatório e custo; **Novo ciclo** continua no
+   mesmo tópico, já adaptado ao que você errou.
+
+Para parar o servidor, use **Ctrl+C** no terminal. **Encerrar sessão** (barra lateral) interrompe o
+ciclo em andamento; recarregar a página (F5) também descarta a sessão em andamento, mas o que já
+foi salvo no perfil permanece.
+
+No Windows, feche o Streamlit antes de rodar `uv sync`: com ele aberto, o `uv` não consegue
+substituir os arquivos do ambiente ("arquivo já está sendo usado por outro processo").
+
+### Terminal
+
+```bash
+uv run estudai estudar --aluno ana --topico funcoes   # tópicos: funcoes, probabilidade, cinematica, dinamica
+uv run estudai estudar --aluno ana --topico funcoes --ciclos 2
+uv run estudai perfil ana                             # histórico de versões do perfil
+```
+
+Responda às perguntas do tutor digitando e às questões com a letra da alternativa. **Ctrl+C**
+interrompe (no PowerShell, Ctrl+Z não funciona).
+
+## Experimento (Seção 5.3)
+
+```bash
 uv run estudai experimento --saida results/exp1.jsonl   # 3 condições × 3 personas × 4 tópicos
 uv run estudai relatorio results/exp1.jsonl --orcamento-usd 0.50
 ```
