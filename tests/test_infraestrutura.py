@@ -1,16 +1,18 @@
 import pytest
+from fakes import FakeChatModel
 
+from estudai.agents.base import run_config
 from estudai.application.telemetria import UsageLedger
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
 from estudai.domain.perfil import PerfilAluno
 from estudai.infrastructure.ingestion.wikibooks import PaginaWiki, fatiar
 from estudai.infrastructure.knowledge.database import KnowledgeDatabase
-from estudai.infrastructure.llm.decorators import RetryingLLMClient, TrackingLLMClient
+from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
+from estudai.infrastructure.llm.factory import GEMINI_OPENAI_BASE_URL, build_chat_model
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 from estudai.ports.knowledge import SearchMode
-from estudai.ports.llm import ChatMessage, LLMRequest, LLMResponse, TransientLLMError, Usage
 
 
 @pytest.mark.parametrize("modo", list(SearchMode))
@@ -74,42 +76,47 @@ def test_sandbox_respeita_timeout(executor):
     assert r.timed_out and not r.ok
 
 
-class _Instavel:
-    model = "m"
-
-    def __init__(self, falhas: int):
-        self.falhas = falhas
-
-    def complete(self, request):
-        if self.falhas:
-            self.falhas -= 1
-            raise TransientLLMError("429")
-        return LLMResponse(text="{}", model="m", usage=Usage(input_tokens=1_000_000, output_tokens=500_000))
+def _modelo(handler, ledger, **kw) -> FakeChatModel:
+    return FakeChatModel({"tutor": handler}, callbacks=[UsageLedgerCallback(ledger, **kw)])
 
 
-def _req():
-    return LLMRequest(system="s", messages=[ChatMessage(role="user", content="u")], caller="tutor")
-
-
-def test_retry_com_backoff_e_telemetria():
-    esperas = []
+def test_callback_registra_custo_por_agente():
     ledger = UsageLedger()
-    cliente = TrackingLLMClient(
-        RetryingLLMClient(_Instavel(falhas=2), sleep=esperas.append, base_delay_s=1),
-        ledger,
-        price_input_per_mtok=1.0,
-        price_output_per_mtok=4.0,
-    )
-    cliente.complete(_req())
-    assert esperas == [1, 2]
+    _modelo('{"valor": 1}', ledger, price_in=1.0, price_out=4.0).invoke("oi", config=run_config("tutor"))
     resumo = ledger.summary()
-    assert resumo.total.cost_usd == pytest.approx(3.0)
+    # o FakeChatModel reporta 100 tokens de entrada e 20 de saída
+    assert resumo.total.cost_usd == pytest.approx((100 * 1.0 + 20 * 4.0) / 1e6)
     assert resumo.por_agente["tutor"].calls == 1
 
 
-def test_retry_desiste():
-    with pytest.raises(TransientLLMError):
-        RetryingLLMClient(_Instavel(falhas=5), max_attempts=2, sleep=lambda _: None).complete(_req())
+def test_callback_descarta_chamada_que_falhou():
+    def falha(_):
+        raise RuntimeError("429")
+
+    ledger = UsageLedger()
+    modelo = _modelo(falha, ledger)
+    with pytest.raises(RuntimeError):
+        modelo.invoke("oi", config=run_config("tutor"))
+    callback = modelo.callbacks[0]
+    assert ledger.summary().total.calls == 0 and not callback._starts
+
+
+def test_factory_usa_endpoint_compativel_do_gemini():
+    gemini = build_chat_model(
+        provider="gemini", model="gemini-3-flash", api_key="k", temperature=0.7, max_retries=3, timeout_s=10
+    )
+    assert gemini.openai_api_base == GEMINI_OPENAI_BASE_URL
+    assert (gemini.temperature, gemini.max_retries) == (0.7, 3)
+    outro = build_chat_model(
+        provider="openai_compat",
+        model="m",
+        api_key="k",
+        base_url="https://x/v1",
+        temperature=0,
+        max_retries=0,
+        timeout_s=10,
+    )
+    assert outro.openai_api_base == "https://x/v1"
 
 
 def test_fatiamento_por_secao():

@@ -18,7 +18,7 @@ from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.mensagens import TipoMensagem
 from estudai.domain.questoes import OrigemItem, Particao
 from estudai.domain.tutoria import Encerramento
-from estudai.infrastructure.llm.decorators import TrackingLLMClient
+from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 
@@ -28,7 +28,7 @@ T = Topico.FUNCOES
 def handlers(corretor_suspeita: bool = False, voto_painel: str = "B") -> dict:
     def tutor(request):
         # 1ª rodada: ensina; 2ª: valida os conceitos-alvo (lidos do objetivo no prompt) e encerra
-        prompt = request.messages[0].content
+        prompt = next(m.content for m in request.messages if m.type == "human")  # [0] é o SystemMessage
         primeira = "(início da sessão)" in prompt
         alvo = ["funcao_quadratica", "funcao_exponencial"]
         return {
@@ -98,10 +98,10 @@ def montar(
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
     ledger = UsageLedger()
-    llm = TrackingLLMClient(FakeChatModel(handlers(**kw)), ledger)
+    llm = FakeChatModel(handlers(**kw), callbacks=[UsageLedgerCallback(ledger)])
 
     def validador(voto: str) -> ValidadorExercicios:
-        painel_llm = TrackingLLMClient(FakeChatModel(handlers(voto_painel=voto)), ledger)
+        painel_llm = FakeChatModel(handlers(voto_painel=voto), callbacks=[UsageLedgerCallback(ledger)])
         return ValidadorExercicios(
             PainelResolutores([Resolutor(painel_llm) for _ in range(3)]), VerificadorSimbolico(executor)
         )
