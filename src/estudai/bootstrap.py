@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.rate_limiters import InMemoryRateLimiter
 
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
@@ -68,6 +69,7 @@ class Container:
     settings: Settings
     ledger: UsageLedger = field(default_factory=UsageLedger)
     _modelos: dict = field(default_factory=dict, repr=False)
+    _limitadores: dict = field(default_factory=dict, repr=False)
 
     # --- LLMs ---------------------------------------------------------------------------
 
@@ -87,6 +89,7 @@ class Container:
                 temperature=TEMPERATURA[papel],
                 max_retries=s.llm_max_attempts - 1,
                 timeout_s=s.llm_timeout_s,
+                rate_limiter=self._limitador(config),
                 callbacks=[
                     UsageLedgerCallback(
                         ledger,
@@ -97,6 +100,20 @@ class Container:
                 ],
             )
         return self._modelos[chave]
+
+    def _limitador(self, config: ModelConfig) -> InMemoryRateLimiter | None:
+        """Um limitador por modelo, compartilhado entre papéis, temperaturas e ledgers: a cota
+        do fornecedor é por modelo, então juízes, aluno simulado e agentes disputam a mesma."""
+        if not config.requests_per_minute:
+            return None
+        chave = (config.provider, config.model, config.base_url)
+        if chave not in self._limitadores:
+            self._limitadores[chave] = InMemoryRateLimiter(
+                requests_per_second=config.requests_per_minute / 60,
+                check_every_n_seconds=0.2,
+                max_bucket_size=1,  # sem rajadas: espaça as chamadas uniformemente
+            )
+        return self._limitadores[chave]
 
     def fronteira(self, papel: Papel) -> BaseChatModel:
         return self.chat(self.settings.frontier, papel)

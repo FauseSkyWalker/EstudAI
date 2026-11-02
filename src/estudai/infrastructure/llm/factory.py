@@ -8,6 +8,7 @@ from typing import Literal
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
+from langchain_core.rate_limiters import BaseRateLimiter
 from langchain_openai import ChatOpenAI
 
 # O Gemini expõe uma API compatível com a da OpenAI; assim um único cliente atende os dois tiers.
@@ -24,7 +25,10 @@ def build_chat_model(
     timeout_s: float,
     base_url: str | None = None,
     callbacks: Sequence[BaseCallbackHandler] = (),
+    rate_limiter: BaseRateLimiter | None = None,
 ) -> BaseChatModel:
+    """`rate_limiter` deve ser compartilhado por todos os modelos que consomem a mesma cota
+    (no Gemini, a cota é por modelo e por projeto, não por instância)."""
     if provider == "gemini":
         base_url = base_url or GEMINI_OPENAI_BASE_URL
     return ChatOpenAI(
@@ -35,4 +39,5 @@ def build_chat_model(
         max_retries=max_retries,
         timeout=timeout_s,
         callbacks=list(callbacks),
+        rate_limiter=rate_limiter,
     )

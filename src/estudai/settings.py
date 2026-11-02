@@ -13,17 +13,19 @@ class ModelConfig(BaseModel):
     base_url: str | None = None
     price_input_per_mtok: float = 0.0
     price_output_per_mtok: float = 0.0
+    # Limite do fornecedor (ex.: plano gratuito do Gemini 3 Flash = 5/min). None = sem limitador.
+    requests_per_minute: float | None = None
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ESTUDAI_", env_nested_delimiter="__", env_file=".env", extra="ignore")
 
-    economic: ModelConfig = ModelConfig(model="gemini-3-flash")
+    economic: ModelConfig = ModelConfig(model="gemini-3-flash-preview")
     frontier: ModelConfig = ModelConfig(provider="openai_compat", model="muse-spark-1.3")
     # Painel de resolutores
     panel: list[ModelConfig] | None = None
     # Avaliação - juízes e simulador do aluno
-    judges: list[ModelConfig] = [ModelConfig(model="gemini-3-flash")]
+    judges: list[ModelConfig] = [ModelConfig(model="gemini-3-flash-preview")]
     student: ModelConfig | None = None  # None = modelo econômico
 
     gemini_api_key: SecretStr | None = None

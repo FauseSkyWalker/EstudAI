@@ -11,8 +11,9 @@ from collections import defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
-from openai import OpenAIError
+from openai import OpenAIError, RateLimitError
 from pydantic import ValidationError
 from tqdm import tqdm
 
@@ -66,8 +67,17 @@ def _para_questao(bruta: QuestaoBruta, rotulo: Rotulo) -> Questao | None:
         return None  # p.ex. número de alternativas fora do padrão
 
 
+def _cota_diaria(erro: RateLimitError) -> bool:
+    """O Gemini diferencia a cota por minuto da diária na mensagem; só a diária justifica parar."""
+    return "per day" in str(erro.body or erro).lower()
+
+
 def separar_bateria(questoes: list[Questao], por_topico: int, seed: int = 0) -> list[Questao]:
-    """Marca `por_topico` questões de cada tópico como bateria, maximizando a cobertura de conceitos."""
+    """Marca até `por_topico` questões de cada tópico como bateria, maximizando a cobertura de conceitos.
+
+    A bateria nunca passa de metade das questões do tópico: o restante precisa ficar no banco para o
+    diagnóstico, o RAG e a condição C3 (com poucas questões, tudo virava bateria e o banco ficava vazio).
+    """
     rng = random.Random(seed)
     por_topico_q: dict[Topico, list[Questao]] = defaultdict(list)
     for q in questoes:
@@ -77,7 +87,7 @@ def separar_bateria(questoes: list[Questao], por_topico: int, seed: int = 0) -> 
     for lista in por_topico_q.values():
         rng.shuffle(lista)
         cobertos: set[str] = set()
-        for _ in range(min(por_topico, len(lista))):
+        for _ in range(min(por_topico, len(lista) // 2)):
             melhor = max((q for q in lista if q.id not in bateria), key=lambda q: len(set(q.conceitos) - cobertos))
             bateria.add(melhor.id)
             cobertos |= set(melhor.conceitos)
@@ -102,11 +112,23 @@ def ingerir_questoes(
         else:
             elegiveis.append(b)
 
+    cota_esgotada = Event()
+
     def rotular(b: QuestaoBruta) -> tuple[QuestaoBruta, Rotulo | None]:
         if (rotulo := cache.get(b.id)) is not None:
             return b, rotulo
+        if cota_esgotada.is_set():
+            return b, None
         try:
             return b, classificador.classificar(b)
+        except RateLimitError as e:
+            if _cota_diaria(e) and not cota_esgotada.is_set():
+                cota_esgotada.set()
+                print("Cota DIÁRIA do modelo esgotada: interrompendo. Os rótulos já feitos ficam no cache;")
+                print("rode de novo quando a cota renovar (ou ative o faturamento / troque o modelo).")
+            elif not cota_esgotada.is_set():
+                print("Limite por minuto atingido (429) após os retries; configure REQUESTS_PER_MINUTE no .env.")
+            return b, None
         except (AgentOutputError, OpenAIError) as e:  # falha após os retries do cliente
             print("Erro ao rotular: ", e)
             return b, None

@@ -125,3 +125,33 @@ def test_fatiamento_por_secao():
     assert len(trechos) > 1
     assert all(t.secao == "Vértice" for t in trechos)  # a introdução curta é descartada
     assert len({t.id for t in trechos}) == len(trechos)
+
+
+def test_limitador_de_taxa_e_compartilhado_por_modelo():
+    from estudai.bootstrap import Container
+    from estudai.domain.mensagens import Papel
+    from estudai.settings import ModelConfig, Settings
+
+    limitado = ModelConfig(model="gemini-x", requests_per_minute=5)
+    s = Settings(_env_file=None, gemini_api_key="k", economic=limitado, frontier=limitado)
+    c = Container(s)
+    tutor, juiz = c.fronteira(Papel.TUTOR), c.chat(limitado, Papel.JUIZ, ledger=UsageLedger())
+    # a cota do fornecedor é por modelo: papéis, temperaturas e ledgers diferentes dividem o mesmo limitador
+    assert tutor is not juiz and tutor.rate_limiter is juiz.rate_limiter is not None
+    assert tutor.rate_limiter.requests_per_second == pytest.approx(5 / 60)
+    assert c.chat(ModelConfig(model="sem-limite"), Papel.TUTOR).rate_limiter is None
+
+
+def test_bateria_nunca_esvazia_o_banco():
+    from conftest import questao
+
+    from estudai.domain.questoes import Particao
+    from estudai.infrastructure.ingestion.questoes import separar_bateria
+
+    conceitos = list(Topico.FUNCOES.conceitos)
+    poucas = [questao(i, [conceitos[i % len(conceitos)]]) for i in range(5)]
+    particoes = [q.particao for q in separar_bateria(poucas, por_topico=8)]
+    assert particoes.count(Particao.BATERIA) == 2 and particoes.count(Particao.BANCO) == 3
+
+    muitas = [questao(i, [conceitos[i % len(conceitos)]]) for i in range(30)]
+    assert [q.particao for q in separar_bateria(muitas, por_topico=8)].count(Particao.BATERIA) == 8
