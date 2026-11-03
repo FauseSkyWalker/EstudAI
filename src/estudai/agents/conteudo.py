@@ -41,7 +41,7 @@ class AgenteConteudo(Agent):
         *,
         usage_cb: BaseCallbackHandler | None = None,
         k: int = 4,
-        min_score: float = 0.2,
+        min_score: float = 0.65,
         max_steps: int = 4,
         **kw,
     ) -> None:
@@ -53,7 +53,7 @@ class AgenteConteudo(Agent):
         self._tools = [
             search_tool(SearchMode.HIBRIDA, kb, k, min_score),
             search_tool(SearchMode.SEMANTICA, kb, k, min_score),
-            search_tool(SearchMode.TEXTUAL, kb, k, min_score),
+            search_tool(SearchMode.TEXTUAL, kb, k, None),
         ]
 
     def buscar(self, pedido: str, topico: Topico | None = None, incluir_questoes: bool = True) -> PacoteMaterial:
@@ -95,8 +95,8 @@ class AgenteConteudo(Agent):
         do_tipo = {i: h for i, h in candidates.items() if h.document.tipo == tipo}
         escolhidos = [i for i in dict.fromkeys(ids) if i in do_tipo]  # descarta ids inventados
 
-        if len(escolhidos) < self._k:  # completa com os melhores scores não escolhidos
-            restantes = sorted((i for i in do_tipo if i not in escolhidos), key=lambda i: -do_tipo[i].score)
+        if len(escolhidos) < self._k:  # completa na ordem em que as buscas retornaram
+            restantes = [i for i in do_tipo if i not in escolhidos]
             escolhidos += restantes[: self._k - len(escolhidos)]
 
         return [

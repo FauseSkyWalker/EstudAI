@@ -28,7 +28,7 @@ class Document(BaseModel):
 
 class SearchHit(BaseModel):
     document: Document
-    score: float  # normalizado em [0, 1]
+    score: float
 
 
 class KnowledgeBase(Protocol):

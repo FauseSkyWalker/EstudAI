@@ -62,9 +62,8 @@ class KnowledgeDatabase:
     ) -> list[SearchHit]:
         t = self.db.open_table(DOCS_TABLE_NAME)
 
-        # O vetor da consulta serve à busca e também ao score absoluto (mesmo na busca textual).
-        # Sem embedder não há como vetorizar a consulta: usa BM25.
-        vetor = self.embedder.embed([query], query=True)[0] if self.embedder is not None else None
+        usar_vetor = self.embedder is not None and mode != SearchMode.TEXTUAL
+        vetor = self.embedder.embed([query], query=True)[0] if usar_vetor else None
         effective_mode = SearchMode.TEXTUAL if vetor is None else mode
 
         if effective_mode == SearchMode.TEXTUAL:
@@ -93,13 +92,7 @@ class KnowledgeDatabase:
 
     @staticmethod
     def _hits(rows: list[dict], vetor: list[float] | None) -> list[SearchHit]:
-        """Converte as linhas em `SearchHit`s, mantendo a ordem do modo de busca.
-
-        O `score` precisa ser comparável entre buscas para o corte por similaridade mínima
-        (`kb_min_score`, Seção 4) fazer sentido. Com embeddings, ele é a similaridade de cosseno
-        entre a consulta e o documento. Sem embeddings só há BM25, cuja escala depende da consulta,
-        e o score é relativo ao melhor resultado (o primeiro sempre vale 1.0).
-        """
+        """Converte as linhas em `SearchHit`s, mantendo a ordem do modo de busca."""
         if vetor is not None:
             scores = [_cosseno(vetor, r.get("embedding")) for r in rows]
         else:

@@ -53,8 +53,9 @@ class Settings(BaseSettings):
 
     # Limites de execução
     kb_k: int = 4
-    # Similaridade de cosseno mínima entre consulta e trecho (Seção 4). Calibrado para o gemini-embedding-001:
-    # consultas do tema ficam em 0,70–0,79 e fora do tema em 0,56–0,63. Outro embedder exige recalibrar.
+    # Similaridade de cosseno mínima para SEMANTICA/HIBRIDA (Seção 4), calibrada para o
+    # gemini-embedding-001: consultas do tema ficam em 0,70–0,79 e fora do tema em 0,56–0,63.
+    # Outro embedder exige recalibrar. TEXTUAL é BM25 e não usa este corte.
     kb_min_score: float = 0.65
     react_max_steps: int = 6
     max_perguntas_diagnostico: int = 6

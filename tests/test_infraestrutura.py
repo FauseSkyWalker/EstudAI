@@ -264,7 +264,7 @@ class _EmbedderPorTema:
         return vetores
 
 
-@pytest.mark.parametrize("modo", list(SearchMode))
+@pytest.mark.parametrize("modo", [SearchMode.SEMANTICA, SearchMode.HIBRIDA])
 def test_score_com_embeddings_e_similaridade_absoluta(tmp_path, modo):
     """O 1º resultado não vale mais 1.0 por definição: uma consulta fora do tema fica abaixo do corte."""
     from estudai.domain.material import TipoDocumento
@@ -280,3 +280,32 @@ def test_score_com_embeddings_e_similaridade_absoluta(tmp_path, modo):
     assert relevante[0].document.id == "quad" and relevante[0].score > 0.9
     fora_do_tema = kb.search("receita de bolo que fica pronta", modo, k=2)
     assert all(h.score < 0.65 for h in fora_do_tema)
+
+
+class _EmbedderSemConsulta:
+    """Embedder que só aceita documentos: qualquer consulta vetorizada é um erro."""
+
+    def __init__(self):
+        self.consultas = 0
+
+    def embed(self, texts, *, query=False):
+        if query:
+            self.consultas += 1
+            raise AssertionError("TEXTUAL não deve vetorizar a consulta")
+        return [[1.0, 0.0] for _ in texts]
+
+
+def test_textual_usa_bm25_sem_consultar_o_embedder(tmp_path):
+    """TEXTUAL é léxico: não depende do embedder nem do score de cosseno."""
+    from estudai.domain.material import TipoDocumento
+    from estudai.ports.knowledge import Document
+
+    embedder = _EmbedderSemConsulta()
+    docs = [Document(id="newton", tipo=TipoDocumento.MATERIAL, fonte="w", texto="A força resultante segue Newton.")]
+    kb = KnowledgeDatabase.build(str(tmp_path / "kb"), docs, embedder)
+
+    hits = kb.search("Newton", SearchMode.TEXTUAL, k=1)
+
+    assert hits and hits[0].document.id == "newton"
+    assert hits[0].score == 1.0  # BM25 relativo ao melhor
+    assert embedder.consultas == 0

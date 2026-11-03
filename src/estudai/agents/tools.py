@@ -32,15 +32,18 @@ def _configurable(config: RunnableConfig | None) -> dict:
     return (config or {}).get("configurable") or {}
 
 
-def search_tool(modo, kb: KnowledgeBase, k: int, min_score: float) -> StructuredTool:
+def search_tool(modo, kb: KnowledgeBase, k: int, min_score: float | None) -> StructuredTool:
     def buscar(consulta: str, tipo: TipoDocumento | None = None, config: RunnableConfig = None) -> str:
         cfg = _configurable(config)
         topico: Topico | None = cfg.get("topico")
         candidatos: dict[str, SearchHit] | None = cfg.get("candidates")
         hits = kb.search(consulta, modo, k=2 * k, tipo=tipo, topico=topico)
 
-        hits = [h for h in hits if h.score >= min_score]
+        if min_score is not None:
+            hits = [h for h in hits if h.score >= min_score]
         if not hits:
+            if min_score is None:
+                return "Nenhum resultado."
             return f"Nenhum resultado com score >= {min_score}."
 
         linhas = []
