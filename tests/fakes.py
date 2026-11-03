@@ -153,10 +153,14 @@ class ScriptedLearner:
         return "Acho que é assim..."
 
     def solve(self, item_id: str, item: ItemObjetivo) -> RespostaAluno:
+        """`padrao`/`escolhas` aceitam uma letra ou "certa"/"errada" (as alternativas geradas são embaralhadas)."""
         self.itens.append(item_id)
-        return RespostaAluno(
-            item_id=item_id, escolha=self._escolhas.get(item_id, self._padrao), resolucao="fiz a conta"
-        )
+        escolha = self._escolhas.get(item_id, self._padrao)
+        if escolha == "certa":
+            escolha = item.gabarito
+        elif escolha == "errada":
+            escolha = next(letra for letra in item.letras if letra != item.gabarito)
+        return RespostaAluno(item_id=item_id, escolha=escolha, resolucao="fiz a conta")
 
     def notify(self, notificacao: Notificacao) -> None:
         self.notificacoes.append(notificacao.texto)

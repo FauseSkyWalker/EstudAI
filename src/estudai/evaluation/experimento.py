@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from estudai.agents.base import AgentOutputError
 from estudai.application.orquestrador import ConfigSessao, Orquestrador, ResultadoCiclo
 from estudai.domain.curriculum import Topico
+from estudai.domain.mensagens import Mensagem
 from estudai.domain.perfil import NivelDominio
 from estudai.domain.questoes import Particao
 from estudai.domain.tutoria import TranscricaoTutoria
@@ -61,6 +62,9 @@ class RegistroCiclo(BaseModel):
     tokens_entrada: int
     tokens_saida: int
     latencia_s: float
+    # Auditoria (Seção 4): mensagens do protocolo do ciclo, num JSONL à parte (pode ser grande)
+    mensagens: int = 0
+    arquivo_mensagens: str | None = None  # relativo à pasta do arquivo de resultados
 
 
 class ResultadoExecucao(BaseModel):
@@ -113,6 +117,9 @@ class Experimento:
         self._ciclos = ciclos
         self._seed = seed
         self._avaliar_itens = avaliar_itens
+        # definidos por `executar` a partir do arquivo de resultados
+        self._raiz_resultados: Path | None = None
+        self._dir_mensagens: Path | None = None
 
     def executar(
         self,
@@ -123,6 +130,8 @@ class Experimento:
         progresso: Callable[[str], None] = lambda _: None,
     ) -> list[ResultadoExecucao]:
         feitos = {r.chave: r for r in carregar_resultados(saida)} if saida.exists() else {}
+        self._raiz_resultados = saida.parent
+        self._dir_mensagens = diretorio_mensagens(saida)
         resultados = []
         for condicao in condicoes:
             for persona in personas:
@@ -168,11 +177,22 @@ class Experimento:
                 tempo_aluno = aluno.tempo_llm_s
                 saida = orquestrador.executar_ciclo(aluno_id, topico, aluno)
                 latencia = saida.latencia_s - (aluno.tempo_llm_s - tempo_aluno)
-                resultado.ciclos.append(self._registrar(ciclo, nivel_verdadeiro, saida, aluno, latencia))
+                registro = self._registrar(ciclo, nivel_verdadeiro, saida, aluno, latencia)
+                registro.mensagens = len(saida.mensagens)
+                registro.arquivo_mensagens = self._salvar_mensagens(f"{aluno_id}-ciclo{ciclo}", saida.mensagens)
+                resultado.ciclos.append(registro)
         except Exception as exc:  # noqa: BLE001 - registra a falha e segue o experimento
             resultado.erro = f"{type(exc).__name__}: {exc}"
         resultado.pos_teste = media(aluno.responder_bateria(bateria)) or 0.0
         return resultado
+
+    def _salvar_mensagens(self, nome: str, mensagens: list[Mensagem]) -> str | None:
+        if self._dir_mensagens is None:  # `executar_um` chamado fora de `executar`
+            return None
+        self._dir_mensagens.mkdir(parents=True, exist_ok=True)
+        arquivo = self._dir_mensagens / f"{nome}.jsonl"
+        arquivo.write_text("".join(m.model_dump_json() + "\n" for m in mensagens), encoding="utf-8")
+        return arquivo.relative_to(self._raiz_resultados).as_posix()
 
     def _registrar(
         self,
@@ -246,3 +266,16 @@ def _anexar(caminho: Path, resultado: ResultadoExecucao) -> None:
 def carregar_resultados(caminho: Path) -> list[ResultadoExecucao]:
     with caminho.open(encoding="utf-8") as f:
         return [ResultadoExecucao.model_validate(json.loads(linha)) for linha in f if linha.strip()]
+
+
+def diretorio_mensagens(saida: Path) -> Path:
+    """`results/exp1.jsonl` -> `results/exp1_mensagens/`."""
+    return saida.with_name(f"{saida.stem}_mensagens")
+
+
+def carregar_mensagens(saida: Path, registro: RegistroCiclo) -> list[Mensagem]:
+    """Mensagens do protocolo de um ciclo, para auditar o que cada agente enviou e recebeu."""
+    if registro.arquivo_mensagens is None:
+        return []
+    arquivo = saida.parent / registro.arquivo_mensagens
+    return [Mensagem.model_validate_json(linha) for linha in arquivo.read_text(encoding="utf-8").splitlines() if linha]

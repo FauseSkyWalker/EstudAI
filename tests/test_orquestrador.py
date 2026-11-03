@@ -1,5 +1,7 @@
 """Pipeline completo com LLM roteirizado e implementações reais de RAG, sandbox e persistência."""
 
+import re
+
 import pytest
 from fakes import FakeChatModel, ScriptedLearner, structured_final, tool_call
 
@@ -25,7 +27,16 @@ from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecu
 T = Topico.FUNCOES
 
 
-def handlers(corretor_suspeita: bool = False, voto_painel: str = "B") -> dict:
+def _letra_da(request, texto: str) -> str:
+    """Letra da alternativa cujo texto é `texto` no enunciado que o resolutor recebeu."""
+    prompt = next(m.content for m in request.messages if m.type == "human")
+    return re.search(rf"^([A-E])\) {re.escape(texto)}$", prompt, re.MULTILINE).group(1)
+
+
+def handlers(corretor_suspeita: bool = False, voto_painel: str = "5") -> dict:
+    """`voto_painel` é o TEXTO da alternativa em que o painel vota: as alternativas geradas são
+    embaralhadas, então o painel (como o real) resolve pelo conteúdo, não por uma letra fixa."""
+
     def tutor(request):
         # 1ª rodada: ensina; 2ª: valida os conceitos-alvo (lidos do objetivo no prompt) e encerra
         prompt = next(m.content for m in request.messages if m.type == "human")  # [0] é o SystemMessage
@@ -70,7 +81,7 @@ def handlers(corretor_suspeita: bool = False, voto_painel: str = "B") -> dict:
                 "call-final",
             )
         ],
-        "painel_resolutores": [{"raciocinio": "", "resposta": voto_painel}],
+        "painel_resolutores": lambda request: {"raciocinio": "", "resposta": _letra_da(request, voto_painel)},
         "corretor": [
             {
                 "nota": 0.3,
@@ -95,7 +106,7 @@ def montar(
     *,
     config=None,
     fonte="gerado",
-    voto_revalidacao="B",
+    voto_revalidacao="5",
     **kw,
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
@@ -112,7 +123,7 @@ def montar(
     fornecedor = (
         BankExerciseProvider(banco)
         if fonte == "banco"
-        else GeneratedExerciseProvider(GeradorExercicios(llm, conteudo, executor), validador("B"))
+        else GeneratedExerciseProvider(GeradorExercicios(llm, conteudo, executor), validador("5"))
     )
     perfis = JsonProfileRepository(tmp_path)
     orq = Orquestrador(
@@ -133,7 +144,7 @@ def montar(
 
 def test_ciclo_adaptativo_completo(kb, banco, executor, tmp_path):
     orq, perfis = montar(kb, banco, executor, tmp_path)
-    aluno = ScriptedLearner(padrao="A")  # erra tudo
+    aluno = ScriptedLearner(padrao="errada")  # erra tudo
     r = orq.executar_ciclo("ana", T, aluno)
 
     # diagnóstico inicial com questões do banco (nunca da bateria)
@@ -177,10 +188,10 @@ def test_ciclo_adaptativo_completo(kb, banco, executor, tmp_path):
 
 def test_perfil_ja_diagnosticado_nao_repete_diagnostico(kb, banco, executor, tmp_path):
     orq, _ = montar(kb, banco, executor, tmp_path)
-    primeiro = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="A"))
+    primeiro = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="errada"))
     assert primeiro.diagnostico_inicial is not None
 
-    segundo = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="A"))
+    segundo = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="errada"))
 
     assert segundo.diagnostico_inicial is None
     assert segundo.sondagem == []
@@ -198,7 +209,7 @@ def test_perfil_congelado_nao_diagnostica_nem_persiste(kb, banco, executor, tmp_
 
 def test_memoria_episodica_chega_ao_tutor_no_ciclo_seguinte(kb, banco, executor, tmp_path):
     orq, perfis = montar(kb, banco, executor, tmp_path)
-    orq.executar_ciclo("ana", T, ScriptedLearner(padrao="A"))  # erra tudo
+    orq.executar_ciclo("ana", T, ScriptedLearner(padrao="errada"))  # erra tudo
 
     episodio = perfis.load("ana").episodios[-1]
     assert episodio.pontos_chave == ("vértice em -b/2a",)  # do Agente de Resumo
@@ -207,7 +218,7 @@ def test_memoria_episodica_chega_ao_tutor_no_ciclo_seguinte(kb, banco, executor,
 
     modelo = orq._tutores[Disciplina.MATEMATICA]._model
     ja_vistas = len(modelo.requests)
-    r2 = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="B"))
+    r2 = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"))
 
     prompts_tutor = [
         m.content
@@ -241,8 +252,8 @@ def test_condicao_banco_usa_questoes_reais_sem_repetir_a_sondagem(kb, banco, exe
 
 def test_gabarito_suspeito_sem_consenso_remove_item_e_notifica(kb, banco, executor, tmp_path):
     # o painel aprova na geração, mas, quando o Corretor suspeita, a revalidação discorda
-    orq, _ = montar(kb, banco, executor, tmp_path, corretor_suspeita=True, voto_revalidacao="C")
-    aluno = ScriptedLearner(padrao="A")
+    orq, _ = montar(kb, banco, executor, tmp_path, corretor_suspeita=True, voto_revalidacao="4")
+    aluno = ScriptedLearner(padrao="errada")
     r = orq.executar_ciclo("davi", T, aluno)
     assert len(r.removidos) == 3 and r.correcoes == []
     assert any("removido" in n for n in aluno.notificacoes)

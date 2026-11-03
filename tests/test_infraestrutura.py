@@ -246,3 +246,37 @@ def test_embedder_gemini_espera_a_cota_por_minuto_e_desiste_da_diaria():
     with pytest.raises(Exception, match="per day"):
         embedder._com_espera(diaria)
     assert len(esperas) == 1  # a cota diária não é esperada
+
+
+class _EmbedderPorTema:
+    """Embedder determinístico: um eixo por tema, para similaridades conhecidas."""
+
+    TEMAS = {"parábola": 0, "vértice": 0, "newton": 1, "força": 1, "bolo": 2}
+
+    def embed(self, texts, *, query=False):
+        vetores = []
+        for texto in texts:
+            v = [0.05, 0.05, 0.05]
+            for palavra, eixo in self.TEMAS.items():
+                if palavra in texto.lower():
+                    v[eixo] += 1.0
+            vetores.append(v)
+        return vetores
+
+
+@pytest.mark.parametrize("modo", list(SearchMode))
+def test_score_com_embeddings_e_similaridade_absoluta(tmp_path, modo):
+    """O 1º resultado não vale mais 1.0 por definição: uma consulta fora do tema fica abaixo do corte."""
+    from estudai.domain.material import TipoDocumento
+    from estudai.ports.knowledge import Document
+
+    docs = [
+        Document(id="quad", tipo=TipoDocumento.MATERIAL, fonte="w", texto="O vértice da parábola fica em -b/2a."),
+        Document(id="newton", tipo=TipoDocumento.MATERIAL, fonte="w", texto="A força resultante segue Newton."),
+    ]
+    kb = KnowledgeDatabase.build(str(tmp_path / "kb"), docs, _EmbedderPorTema())
+
+    relevante = kb.search("vértice da parábola", modo, k=2)
+    assert relevante[0].document.id == "quad" and relevante[0].score > 0.9
+    fora_do_tema = kb.search("receita de bolo que fica pronta", modo, k=2)
+    assert all(h.score < 0.65 for h in fora_do_tema)

@@ -40,6 +40,18 @@ def run_config(caller: str, usage_cb: BaseCallbackHandler | None = None) -> Runn
     return config
 
 
+# Vale para todos os agentes: alguns modelos (ex.: Muse Spark) escrevem português sem acentos
+# ("voce ja domina") se isso não for pedido explicitamente.
+REGRA_IDIOMA = (
+    "\n\nEscreva todo texto em português do Brasil, com acentuação e ortografia corretas "
+    '(ex.: "você", "já", "função"), inclusive dentro dos campos do JSON.'
+)
+
+
+def com_regra_idioma(system: str) -> str:
+    return system + REGRA_IDIOMA
+
+
 class AgentOutputError(RuntimeError):
     """O agente não produziu saída válida dentro do limite de reparos."""
 
@@ -91,7 +103,7 @@ class Agent:
         """
         runnable = self._structured_runnable(schema)
         parser = PydanticOutputParser(pydantic_object=schema)
-        messages: list[BaseMessage] = [SystemMessage(system), HumanMessage(prompt)]
+        messages: list[BaseMessage] = [SystemMessage(com_regra_idioma(system)), HumanMessage(prompt)]
 
         error = None
         for _ in range(self._max_repairs + 1):
@@ -143,7 +155,7 @@ class Agent:
             agent = create_agent(
                 self._model,
                 tools=tools,
-                system_prompt=system_prompt,
+                system_prompt=com_regra_idioma(system_prompt),
                 response_format=self._response_strategy(response_schema),
             )
             self._tool_agents[key] = agent

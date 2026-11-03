@@ -1,5 +1,6 @@
 """Itens objetivos: questões do banco (gabarito oficial) e exercícios entregues ao aluno."""
 
+import random
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -93,6 +94,23 @@ class Exercicio(ItemObjetivo):
     def _conceitos_do_topico(self):
         self.conceitos = conceitos_validos(self.topico, self.conceitos)
         return self
+
+    def com_alternativas_embaralhadas(self) -> "Exercicio":
+        """Reordena as alternativas e remapeia o gabarito.
+
+        LLMs concentram a resposta certa em certas posições (no teste real, os 4 itens gerados
+        tinham gabarito C), o que um aluno aprenderia a explorar. O sorteio deriva do id do
+        exercício, então a mesma questão sempre sai na mesma ordem (reprodutível).
+        """
+        ordem = list(range(len(self.alternativas)))
+        random.Random(self.id).shuffle(ordem)
+        correta = self.letras.index(self.gabarito)
+        return self.model_copy(
+            update={
+                "alternativas": [self.alternativas[i] for i in ordem],
+                "gabarito": LETRAS[ordem.index(correta)],
+            }
+        )
 
     @classmethod
     def da_questao(cls, questao: Questao) -> "Exercicio":

@@ -131,7 +131,7 @@ def test_gerador_usa_ferramentas_e_entrega_rascunho():
     assert executor.calls == [("print(2**2 + 1)", 5.0)]
     assert item.topico == Topico.FUNCOES
     assert item.origem == OrigemItem.GERADO
-    assert item.gabarito == "B"
+    assert item.alternativa(item.gabarito) == "5"  # alternativas embaralhadas: vale o conteúdo
     assert item.codigo_verificacao == "print(2**2 + 1)"
 
 

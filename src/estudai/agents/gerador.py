@@ -34,6 +34,7 @@ Requisitos:
 - Use `consultar_conteudo` para se inspirar em questões reais e cite os ids em `referencias`.
 - `alternativas` contém só o texto de cada opção, sem "A)" etc.
 - `gabarito` é a LETRA da alternativa correta (A, B, C, D ou E), nunca o texto da resposta.
+- Na `resolucao`, NÃO cite letras de alternativas (elas serão reordenadas): refira-se ao valor ou ao texto.
 """
 
 
@@ -94,7 +95,8 @@ class GeradorExercicios(Agent):
             configurable={"topico": topico},
         )
         try:
-            return self._montar(rascunho, topico, plano)
+            # embaralha antes da validação: o painel valida a mesma ordem que o aluno verá
+            return self._montar(rascunho, topico, plano).com_alternativas_embaralhadas()
         except ValidationError as exc:  # rascunho incoerente: descarta o item, não o ciclo
             raise AgentOutputError(f"{self.papel.value}: rascunho inválido: {exc}") from exc
 

@@ -99,6 +99,16 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
     assert c1.ciclos[0].conceitos_aprendidos == ["funcao_quadratica", "funcao_exponencial"]
     assert c1.ciclos[0].nivel_estimado == NivelDominio.INTERMEDIARIO
 
+    # auditoria: as mensagens do protocolo de cada ciclo ficam num JSONL ao lado dos resultados
+    from estudai.domain.mensagens import TipoMensagem
+    from estudai.evaluation.experimento import carregar_mensagens
+
+    registro = c1.ciclos[0]
+    assert registro.arquivo_mensagens.startswith("resultados_mensagens/")
+    mensagens = carregar_mensagens(saida, registro)
+    assert len(mensagens) == registro.mensagens > 0
+    assert {TipoMensagem.TUTORIA, TipoMensagem.EXERCICIO, TipoMensagem.CORRECAO} <= {m.tipo for m in mensagens}
+
     # retomada: rodar de novo não reexecuta nada
     assert len(exp.executar(list(Condicao), [PERSONAS[0]], [T], saida)) == 3
     assert len(saida.read_text(encoding="utf-8").splitlines()) == 3

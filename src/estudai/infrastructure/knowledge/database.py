@@ -5,6 +5,7 @@ de modelos densos e utilizando apenas o BM25, que é léxico.
 """
 
 import lancedb
+import numpy as np
 
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
@@ -61,13 +62,14 @@ class KnowledgeDatabase:
     ) -> list[SearchHit]:
         t = self.db.open_table(DOCS_TABLE_NAME)
 
+        # O vetor da consulta serve à busca e também ao score absoluto (mesmo na busca textual).
         # Sem embedder não há como vetorizar a consulta: usa BM25.
-        effective_mode = SearchMode.TEXTUAL if self.embedder is None else mode
+        vetor = self.embedder.embed([query], query=True)[0] if self.embedder is not None else None
+        effective_mode = SearchMode.TEXTUAL if vetor is None else mode
 
         if effective_mode == SearchMode.TEXTUAL:
             results = t.search(query, query_type="fts")
         else:
-            vetor = self.embedder.embed([query], query=True)[0]
             if effective_mode == SearchMode.SEMANTICA:
                 results = t.search(vetor, vector_column_name="embedding", query_type="vector").bypass_vector_index()
             else:
@@ -84,27 +86,32 @@ class KnowledgeDatabase:
             results = results.where(f"topico = '{topico.value}'")
 
         rows = results.limit(k).to_arrow().to_pylist()
+        if vetor is not None:
+            _completar_embeddings(t, rows)
 
-        return self._hits(rows, effective_mode)
+        return self._hits(rows, vetor)
 
     @staticmethod
-    def _hits(rows: list[dict], mode: SearchMode) -> list[SearchHit]:
-        """Converts a list of dict objects into `SearchHit`s"""
+    def _hits(rows: list[dict], vetor: list[float] | None) -> list[SearchHit]:
+        """Converte as linhas em `SearchHit`s, mantendo a ordem do modo de busca.
 
-        if mode == SearchMode.SEMANTICA:
-            raw = [1.0 / (1.0 + float(r.get("_distance", 0.0))) for r in rows]
-        elif mode == SearchMode.HIBRIDA:
-            raw = [float(r.get("_relevance_score", 0.0)) for r in rows]
+        O `score` precisa ser comparável entre buscas para o corte por similaridade mínima
+        (`kb_min_score`, Seção 4) fazer sentido. Com embeddings, ele é a similaridade de cosseno
+        entre a consulta e o documento. Sem embeddings só há BM25, cuja escala depende da consulta,
+        e o score é relativo ao melhor resultado (o primeiro sempre vale 1.0).
+        """
+        if vetor is not None:
+            scores = [_cosseno(vetor, r.get("embedding")) for r in rows]
         else:
             raw = [float(r.get("_score", 0.0)) for r in rows]
-
-        best = max(raw, default=0.0)
+            best = max(raw, default=0.0)
+            scores = [value / best if best > 0 else 0.0 for value in raw]
         return [
             SearchHit(
                 document=Document(**{k: v for k, v in row.items() if not k.startswith("_")}),
-                score=min(1.0, max(0.0, value / best)) if best > 0 else 0.0,
+                score=min(1.0, max(0.0, score)),
             )
-            for row, value in zip(rows, raw, strict=True)
+            for row, score in zip(rows, scores, strict=True)
         ]
 
     def get(self, doc_id: str) -> Document | None:
@@ -115,3 +122,24 @@ class KnowledgeDatabase:
             return None
 
         return Document(**{k: v for k, v in rows[0].items() if not k.startswith("_")})
+
+
+def _completar_embeddings(tabela, rows: list[dict]) -> None:
+    """A busca textual (FTS) do LanceDB devolve a coluna de embedding vazia; lê os vetores por id."""
+    faltando = [r["id"] for r in rows if r.get("embedding") is None]
+    if not faltando:
+        return
+    ids = ", ".join("'" + i.replace("'", "''") + "'" for i in faltando)
+    lidos = tabela.search().where(f"id IN ({ids})").select(["id", "embedding"]).limit(len(faltando)).to_arrow()
+    por_id = {r["id"]: r["embedding"] for r in lidos.to_pylist()}
+    for r in rows:
+        if r.get("embedding") is None:
+            r["embedding"] = por_id.get(r["id"])
+
+
+def _cosseno(a: list[float], b: list[float] | None) -> float:
+    if b is None:
+        return 0.0
+    va, vb = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    normas = float(np.linalg.norm(va) * np.linalg.norm(vb))
+    return float(va @ vb) / normas if normas else 0.0

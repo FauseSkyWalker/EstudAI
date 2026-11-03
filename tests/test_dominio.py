@@ -128,3 +128,20 @@ def test_perfil_antigo_sem_memoria_continua_carregando():
     antigo = PerfilAluno.novo("ana").model_dump(mode="json")
     antigo.pop("episodios")
     assert PerfilAluno.model_validate(antigo).episodios == ()
+
+
+def test_embaralhar_alternativas_preserva_a_resposta_correta():
+    from collections import Counter
+
+    def item(i):
+        return Exercicio(
+            id=f"gen-{i}", topico=T, enunciado="?", alternativas=["10", "20", "30", "40", "50"], gabarito="C"
+        )
+
+    for i in range(50):
+        original, embaralhado = item(i), item(i).com_alternativas_embaralhadas()
+        assert sorted(embaralhado.alternativas) == sorted(original.alternativas)
+        assert embaralhado.alternativa(embaralhado.gabarito) == "30"  # a resposta certa continua certa
+        assert embaralhado == item(i).com_alternativas_embaralhadas()  # reprodutível pelo id
+    posicoes = Counter(item(i).com_alternativas_embaralhadas().gabarito for i in range(200))
+    assert set(posicoes) == {"A", "B", "C", "D", "E"} and max(posicoes.values()) < 70  # sem posição dominante
