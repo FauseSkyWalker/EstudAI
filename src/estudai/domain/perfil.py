@@ -77,6 +77,41 @@ class EstadoTopico(BaseModel):
         return self.acertos / self.itens_respondidos if self.itens_respondidos else None
 
 
+class EpisodioSessao(BaseModel):
+    """Memória episódica (Seção 3): o que aconteceu num ciclo, sintetizado pelo Agente de Resumo.
+
+    Fica no perfil persistente para chegar aos agentes dos ciclos seguintes (o Tutor retoma o que
+    foi visto, o Gerador evita repetir, o Diagnosticador vê a trajetória). Construído por
+    `domain.memoria.registrar_episodio`.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    topico: Topico
+    conceitos_trabalhados: tuple[str, ...] = ()
+    objetivo_atingido: bool = False
+    pontos_chave: tuple[str, ...] = ()
+    erros_comuns: tuple[str, ...] = ()
+    conceitos_com_erro: tuple[str, ...] = ()
+    proximos_passos: tuple[str, ...] = ()
+    acertos: int = 0
+    respondidos: int = 0
+    registrado_em: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def compacto(self) -> dict:
+        """Versão enxuta para prompts."""
+        return {
+            "data": self.registrado_em.date().isoformat(),
+            "conceitos_trabalhados": list(self.conceitos_trabalhados),
+            "objetivo_atingido": self.objetivo_atingido,
+            "pontos_chave": list(self.pontos_chave),
+            "erros_comuns": list(self.erros_comuns),
+            "conceitos_com_erro": list(self.conceitos_com_erro),
+            "proximos_passos": list(self.proximos_passos),
+            "acertos": f"{self.acertos}/{self.respondidos}" if self.respondidos else None,
+        }
+
+
 class PerfilAluno(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -84,6 +119,7 @@ class PerfilAluno(BaseModel):
     versao: int = 0
     topicos: dict[Topico, EstadoTopico] = Field(default_factory=dict)
     historico_erros: tuple[RegistroErro, ...] = ()
+    episodios: tuple[EpisodioSessao, ...] = ()  # memória episódica; perfis antigos carregam vazio
     motivo: str = "criacao"
     atualizado_em: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -105,8 +141,9 @@ class PerfilAluno(BaseModel):
         acertos: int = 0,
         respondidos: int = 0,
         topico: Topico | None = None,
+        episodio: EpisodioSessao | None = None,
     ) -> "PerfilAluno":
-        """Retorna a próxima versão do perfil com o diagnóstico e as evidências aplicados."""
+        """Retorna a próxima versão do perfil com o diagnóstico, as evidências e o episódio aplicados."""
         topico = diagnostico.topico if diagnostico else topico
         topicos = dict(self.topicos)
         if topico is not None:
@@ -128,13 +165,21 @@ class PerfilAluno(BaseModel):
                 "versao": self.versao + 1,
                 "topicos": topicos,
                 "historico_erros": self.historico_erros + tuple(novos_erros),
+                "episodios": self.episodios + ((episodio,) if episodio else ()),
                 "motivo": motivo,
                 "atualizado_em": datetime.now(UTC),
             }
         )
 
-    def visao(self, topico: Topico, max_erros: int = 8) -> dict:
-        """Recorte compacto do perfil para compor prompts (economiza janela de contexto)."""
+    def episodios_do_topico(self, topico: Topico, ultimos: int | None = None) -> list[EpisodioSessao]:
+        episodios = [e for e in self.episodios if e.topico == topico]
+        return episodios[-ultimos:] if ultimos else episodios
+
+    def visao(self, topico: Topico, max_erros: int = 8, max_episodios: int = 3) -> dict:
+        """Recorte compacto do perfil para compor prompts (economiza janela de contexto).
+
+        Inclui as últimas sessões do tópico (memória episódica), da mais antiga para a mais recente.
+        """
         estado = self.estado(topico)
         erros = [e for e in self.historico_erros if e.topico == topico][-max_erros:]
         return {
@@ -147,4 +192,5 @@ class PerfilAluno(BaseModel):
             "lacunas": list(estado.lacunas),
             "taxa_acerto": estado.taxa_acerto,
             "erros_recentes": [e.model_dump(mode="json", exclude={"topico"}) for e in erros],
+            "sessoes_anteriores": [e.compacto() for e in self.episodios_do_topico(topico, max_episodios)],
         }

@@ -4,8 +4,8 @@ Mantém o estado compartilhado (perfil versionado), invoca os agentes na ordem d
 Figura 1, aplica os limites de execução e registra toda troca como `Mensagem` do protocolo.
 
 Ciclo: [diagnóstico inicial] -> tutoria -> resumo -> prática -> correção -> atualização do
-perfil -> relatório. Com `adaptativo=False` (condição C2) o perfil fica congelado: não há
-diagnóstico nem atualização, e todos os agentes enxergam sempre o mesmo estado.
+perfil -> relatório -> memória episódica. Com `adaptativo=False` (condição C2) o perfil fica
+congelado: não há diagnóstico, atualização nem memória, e todos os agentes enxergam sempre o mesmo estado.
 """
 
 import time
@@ -28,6 +28,7 @@ from estudai.application.validacao import ValidadorExercicios
 from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
 from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.material import PacoteMaterial
+from estudai.domain.memoria import registrar_episodio
 from estudai.domain.mensagens import Mensagem, Papel, TipoMensagem
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.perfil import Diagnostico, PerfilAluno, RegistroErro
@@ -366,6 +367,30 @@ class Orquestrador:
         log.send(Papel.RESUMO, Papel.ALUNO, TipoMensagem.RESUMO, relatorio)
         aluno.notify(Notificacao(tipo=TipoNotificacao.RELATORIO, texto=relatorio.desempenho))
         return relatorio
+
+    def _record_episode(
+        self,
+        perfil: PerfilAluno,
+        objetivo: ObjetivoSessao,
+        transcricao: TranscricaoTutoria | None,
+        resumo: ResumoEstudo | None,
+        relatorio: RelatorioPratica | None,
+        correcoes: list[Correcao],
+        log: MessageLog,
+    ) -> PerfilAluno:
+        """Memória episódica (Seção 3): guarda a síntese do ciclo no perfil para os próximos ciclos."""
+        episodio = registrar_episodio(objetivo, transcricao, resumo, relatorio, correcoes)
+        if episodio is None:
+            return perfil
+        perfil = perfil.evoluir("memoria_episodica", topico=objetivo.topico, episodio=episodio)
+        self._perfis.save(perfil)
+        log.send(
+            Papel.RESUMO,
+            Papel.ORQUESTRADOR,
+            TipoMensagem.PERFIL,
+            {"versao": perfil.versao, "episodio": episodio.model_dump(mode="json")},
+        )
+        return perfil
 
 
 def _format_summary(resumo: ResumoEstudo) -> str:

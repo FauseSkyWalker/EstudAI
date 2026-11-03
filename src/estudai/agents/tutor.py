@@ -31,6 +31,10 @@ Regras:
 - Inclua em `conceitos_validados` apenas conceitos que o aluno demonstrou entender respondendo
   corretamente a uma pergunta de verificação nesta sessão.
 - Marque `objetivo_atingido` somente quando todos os conceitos-alvo estiverem validados.
+- Use `sessoes_anteriores` do perfil (memória das sessões passadas) para dar continuidade: na
+  primeira rodada, retome em uma frase o que já foi visto; priorize os `proximos_passos` e os
+  `erros_comuns`/`conceitos_com_erro` que se repetem; não reexplique do zero o que o aluno já
+  dominou. Sem sessões anteriores, comece normalmente.
 """
 
 

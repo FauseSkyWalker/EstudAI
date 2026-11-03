@@ -148,10 +148,10 @@ def test_ciclo_adaptativo_completo(kb, banco, executor, tmp_path):
     # prática: itens gerados e aprovados (verificação simbólica + painel)
     assert len(r.fornecimento.exercicios) == 3 and r.fornecimento.taxa_descarte == 0
     assert all(not c.correta for c in r.correcoes)
-    # perfil: v0 criação, v1 diagnóstico inicial, v2 prática (com erros registrados)
+    # perfil: v0 criação, v1 diagnóstico inicial, v2 prática (com erros), v3 memória episódica
     historico = perfis.history("ana")
-    assert [p.motivo for p in historico] == ["criacao", "diagnostico_inicial", "pratica"]
-    assert r.versao_perfil_final == 2 and len(historico[-1].historico_erros) == 3
+    assert [p.motivo for p in historico] == ["criacao", "diagnostico_inicial", "pratica", "memoria_episodica"]
+    assert r.versao_perfil_final == 3 and len(historico[-1].historico_erros) == 3
     assert r.resumo and r.relatorio
     # protocolo e telemetria
     tipos = {m.tipo for m in r.mensagens}
@@ -194,6 +194,40 @@ def test_perfil_congelado_nao_diagnostica_nem_persiste(kb, banco, executor, tmp_
     assert r.sondagem == [] and r.versao_perfil_final == 0
     assert perfis.history("bia") == []
     assert len(r.correcoes) == 2  # a prática acontece normalmente
+
+
+def test_memoria_episodica_chega_ao_tutor_no_ciclo_seguinte(kb, banco, executor, tmp_path):
+    orq, perfis = montar(kb, banco, executor, tmp_path)
+    orq.executar_ciclo("ana", T, ScriptedLearner(padrao="A"))  # erra tudo
+
+    episodio = perfis.load("ana").episodios[-1]
+    assert episodio.pontos_chave == ("vértice em -b/2a",)  # do Agente de Resumo
+    assert episodio.conceitos_com_erro == ("funcao_quadratica",)  # das correções
+    assert (episodio.acertos, episodio.respondidos, episodio.objetivo_atingido) == (0, 3, True)
+
+    modelo = orq._tutores[Disciplina.MATEMATICA]._model
+    ja_vistas = len(modelo.requests)
+    r2 = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="B"))
+
+    prompts_tutor = [
+        m.content
+        for req in modelo.requests[ja_vistas:]
+        if req.caller == "tutor"
+        for m in req.messages
+        if m.type == "human"
+    ]
+    assert prompts_tutor, "o tutor não foi chamado no 2º ciclo"
+    assert '"sessoes_anteriores"' in prompts_tutor[0] and "vértice em -b/2a" in prompts_tutor[0]
+    # ciclo 2: sem novo diagnóstico; prática + memória = 2 versões novas
+    assert r2.versao_perfil_final == r2.versao_perfil_inicial + 2
+    assert len(perfis.load("ana").episodios) == 2
+
+
+def test_perfil_congelado_nao_grava_memoria(kb, banco, executor, tmp_path):
+    orq, perfis = montar(kb, banco, executor, tmp_path, config=ConfigSessao(adaptativo=False, exercicios_por_sessao=1))
+    orq.executar_ciclo("caio", T, ScriptedLearner())
+    orq.executar_ciclo("caio", T, ScriptedLearner())
+    assert perfis.history("caio") == []  # C2: nem perfil, nem memória
 
 
 def test_condicao_banco_usa_questoes_reais_sem_repetir_a_sondagem(kb, banco, executor, tmp_path):

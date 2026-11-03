@@ -110,6 +110,18 @@ def build_cycle_graph(orchestrator: Orquestrador) -> Any:
         )
         return {"report": report}
 
+    def record_episode(state: CycleState) -> dict[str, Any]:
+        profile = orchestrator._record_episode(
+            state["profile"],
+            state["objective"],
+            state.get("transcript"),
+            state.get("summary"),
+            state.get("report"),
+            state.get("corrections", []),
+            state["log"],
+        )
+        return {"profile": profile}
+
     def needs_diagnosis(state: CycleState) -> str:
         if orchestrator.config.adaptativo and not state["profile"].diagnosticado(state["topic"]):
             return "diagnose"
@@ -117,6 +129,10 @@ def build_cycle_graph(orchestrator: Orquestrador) -> Any:
 
     def needs_profile_update(_state: CycleState) -> str:
         return "update_profile" if orchestrator.config.adaptativo else "build_report"
+
+    def needs_episode(_state: CycleState) -> str:
+        # C2 (perfil congelado) também congela a memória episódica
+        return "record_episode" if orchestrator.config.adaptativo else END
 
     graph = StateGraph(CycleState)
 
@@ -130,6 +146,7 @@ def build_cycle_graph(orchestrator: Orquestrador) -> Any:
     graph.add_node("practice", practice)
     graph.add_node("update_profile", update_profile)
     graph.add_node("build_report", build_report)
+    graph.add_node("record_episode", record_episode)
 
     graph.add_edge(START, "load_profile")
     graph.add_conditional_edges(
@@ -149,6 +166,7 @@ def build_cycle_graph(orchestrator: Orquestrador) -> Any:
         {"update_profile": "update_profile", "build_report": "build_report"},
     )
     graph.add_edge("update_profile", "build_report")
-    graph.add_edge("build_report", END)
+    graph.add_conditional_edges("build_report", needs_episode, {"record_episode": "record_episode", END: END})
+    graph.add_edge("record_episode", END)
 
     return graph.compile()
