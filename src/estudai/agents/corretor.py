@@ -6,7 +6,7 @@ parcial e se o gabarito parece suspeito (o que dispara o painel de resolutores).
 """
 
 from estudai.agents.base import Agent
-from estudai.domain.correcao import AnaliseCorrecao, Correcao, RespostaAluno
+from estudai.domain.correcao import AnaliseCorrecao, Correcao, RespostaAluno, acertou
 from estudai.domain.mensagens import Papel
 from estudai.domain.questoes import Exercicio
 
@@ -23,10 +23,9 @@ class Corretor(Agent):
     papel = Papel.CORRETOR
 
     def corrigir(self, item: Exercicio, resposta: RespostaAluno) -> Correcao:
-        correta = (resposta.escolha or "").strip().upper() == item.gabarito
+        correta = acertou(resposta, item.gabarito)
         base = {"item_id": item.id, "escolha": resposta.escolha, "gabarito": item.gabarito, "correta": correta}
-        if correta and not resposta.resolucao.strip():
-            # nada a diagnosticar: evita uma chamada de LLM
+        if correta and not resposta.resolucao.strip():  # Correct response, avoid an LLM call
             return Correcao(**base, nota=1.0, feedback="Resposta correta.")
 
         prompt = (

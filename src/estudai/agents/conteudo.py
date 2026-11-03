@@ -50,14 +50,14 @@ class AgenteConteudo(Agent):
         self._k = k
         self._min_score = min_score
         self._max_steps = max_steps
+        self._tools = [
+            search_tool(SearchMode.HIBRIDA, kb, k, min_score),
+            search_tool(SearchMode.SEMANTICA, kb, k, min_score),
+            search_tool(SearchMode.TEXTUAL, kb, k, min_score),
+        ]
 
     def buscar(self, pedido: str, topico: Topico | None = None, incluir_questoes: bool = True) -> PacoteMaterial:
         candidates: dict[str, SearchHit] = {}
-        tools = [
-            search_tool(SearchMode.HIBRIDA, topico, candidates, self._kb, self._k, self._min_score),
-            search_tool(SearchMode.SEMANTICA, topico, candidates, self._kb, self._k, self._min_score),
-            search_tool(SearchMode.TEXTUAL, topico, candidates, self._kb, self._k, self._min_score),
-        ]
 
         prompt = (
             f"Pedido: {pedido}\nTópico: {topico.value if topico else 'qualquer'}\n"
@@ -66,7 +66,14 @@ class AgenteConteudo(Agent):
         )
 
         try:
-            selecao = self._run_tool_agent(prompt, tools, SYSTEM, SelecaoConteudo, self._max_steps)
+            selecao = self._run_tool_agent(
+                prompt,
+                self._tools,
+                SYSTEM,
+                SelecaoConteudo,
+                self._max_steps,
+                configurable={"topico": topico, "candidates": candidates},
+            )
         except AgentOutputError:
             selecao = SelecaoConteudo()
 

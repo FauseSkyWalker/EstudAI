@@ -1,4 +1,4 @@
-"""Agente de Resumo (modelo econômico): material de revisão e relatório da prática."""
+"""Summary agent, which summarizes study material and the overall cycle"""
 
 from estudai.agents.base import Agent, to_json
 from estudai.domain.correcao import Correcao, RelatorioPratica
@@ -8,7 +8,7 @@ from estudai.domain.tutoria import ResumoEstudo, TranscricaoTutoria
 
 SYSTEM = """Você é o Agente de Resumo de um sistema de tutoria para vestibulares brasileiros.
 Produza sínteses fiéis ao que foi efetivamente ensinado/praticado, sem acrescentar conteúdo novo.
-Seja conciso: listas curtas, fórmulas em notação simples (ex.: v = v0 + a*t)."""
+Seja conciso: listas curtas e fórmulas matemáticas em notação MathJax. Mantenha a postura didática."""
 
 
 class AgenteResumo(Agent):

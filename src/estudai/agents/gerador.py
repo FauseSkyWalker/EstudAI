@@ -59,13 +59,10 @@ class GeradorExercicios(Agent):
     ) -> None:
         super().__init__(model, usage_cb, **kw)
 
-        self._conteudo = conteudo
-        self._executor = executor
         self._max_steps = max_steps
+        self._tools = [python_tool(executor), call_conteudo_agent_tool(conteudo)]
 
     def gerar(self, perfil: dict, topico: Topico, plano: ItemPlanejado, evitar: list[str]) -> Exercicio:
-        tools = [python_tool(self._executor), call_conteudo_agent_tool(self._conteudo, topico)]
-
         prompt = (
             f"Tópico: {topico.value}\nConceito-alvo: {plano.conceito}\n"
             f"Dificuldade-alvo: {plano.dificuldade.value}\n"
@@ -73,7 +70,14 @@ class GeradorExercicios(Agent):
             "Não repita estes enunciados já usados:\n" + ("\n".join(f"- {e[:160]}" for e in evitar) or "(nenhum)")
         )
 
-        rascunho = self._run_tool_agent(prompt, tools, SYSTEM, RascunhoExercicio, self._max_steps)
+        rascunho = self._run_tool_agent(
+            prompt,
+            self._tools,
+            SYSTEM,
+            RascunhoExercicio,
+            self._max_steps,
+            configurable={"topico": topico},
+        )
         return Exercicio(
             id=f"gen-{uuid4().hex[:8]}",
             topico=topico,

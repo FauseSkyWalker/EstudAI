@@ -1,11 +1,12 @@
 from typing import TYPE_CHECKING
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
-from estudai.ports.knowledge import KnowledgeBase
+from estudai.ports.knowledge import KnowledgeBase, SearchHit
 from estudai.ports.tools import CodeExecutor
 
 if TYPE_CHECKING:
@@ -26,8 +27,16 @@ class _PythonArgs(BaseModel):
     timeout_s: float = Field(default=30, gt=0, description="Timeout, em segundos")
 
 
-def search_tool(modo, topico, candidatos, kb: KnowledgeBase, k, min_score) -> StructuredTool:
-    def buscar(consulta: str, tipo: TipoDocumento | None = None) -> str:
+def _configurable(config: RunnableConfig | None) -> dict:
+    """Extracts a (optional) RunnableConfig. This parameter is passed automatically by LangChain"""
+    return (config or {}).get("configurable") or {}
+
+
+def search_tool(modo, kb: KnowledgeBase, k: int, min_score: float) -> StructuredTool:
+    def buscar(consulta: str, tipo: TipoDocumento | None = None, config: RunnableConfig = None) -> str:
+        cfg = _configurable(config)
+        topico: Topico | None = cfg.get("topico")
+        candidatos: dict[str, SearchHit] | None = cfg.get("candidates")
         hits = kb.search(consulta, modo, k=2 * k, tipo=tipo, topico=topico)
 
         hits = [h for h in hits if h.score >= min_score]
@@ -36,7 +45,8 @@ def search_tool(modo, topico, candidatos, kb: KnowledgeBase, k, min_score) -> St
 
         linhas = []
         for h in hits:
-            candidatos.setdefault(h.document.id, h)
+            if candidatos is not None:
+                candidatos.setdefault(h.document.id, h)
             trecho = h.document.texto[:350].replace("\n", " ")
             linhas.append(f"[{h.document.id}] tipo={h.document.tipo.value} score={h.score:.2f} :: {trecho}")
 
@@ -50,8 +60,9 @@ def search_tool(modo, topico, candidatos, kb: KnowledgeBase, k, min_score) -> St
     )
 
 
-def call_conteudo_agent_tool(agente_conteudo: "AgenteConteudo", topico: Topico | None = None) -> StructuredTool:
-    def consultar(pedido: str) -> str:
+def call_conteudo_agent_tool(agente_conteudo: "AgenteConteudo") -> StructuredTool:
+    def consultar(pedido: str, config: RunnableConfig = None) -> str:
+        topico: Topico | None = _configurable(config).get("topico")
         return agente_conteudo.buscar(pedido, topico).como_contexto(max_chars=3000)
 
     return StructuredTool.from_function(

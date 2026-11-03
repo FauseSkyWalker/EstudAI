@@ -1,10 +1,7 @@
-"""Infraestrutura comum dos agentes: saídas estruturadas validadas por schema.
+"""Base `Agent` class and other related functions. Supports both agents who are simple LLM calls and ReAct agents.
 
-Quando o modelo devolve uma saída inválida, o agente reenvia o pedido com a mensagem de
-erro de validação como instrução de correção (Seção 4), até `max_repairs` vezes.
-
-Temperatura, retries e callbacks de uso são propriedades do modelo, configuradas na raiz de
-composição (`bootstrap.py`); o agente só identifica quem chamou (`metadata.caller`).
+Has retrying on simple agents and max retries on ReAct agents. Features like temperature are decoupled,
+and should be the set on the passed model.
 """
 
 import json
@@ -13,7 +10,8 @@ from typing import Any, TypeVar
 from langchain.agents import create_agent
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
@@ -24,16 +22,20 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def to_json(data: Any) -> str:
+    """Dumps a python object to JSON. Supports dictionaries and Pydantic schemas"""
+
     if isinstance(data, BaseModel):
         return data.model_dump_json(indent=2)
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
 
 
 def run_config(caller: str, usage_cb: BaseCallbackHandler | None = None) -> RunnableConfig:
-    """`caller` vai nos metadados da execução: é por ele que a telemetria separa o custo por agente."""
+    """Setups the `caller` and usage callback configurations to langchain standards."""
+
     config: RunnableConfig = {"metadata": {"caller": caller}, "run_name": caller}
     if usage_cb is not None:
         config["callbacks"] = [usage_cb]
+
     return config
 
 
@@ -54,29 +56,82 @@ class Agent:
         self._model = model
         self._usage_cb = usage_cb
         self._max_repairs = max_repairs
+        self._structured: dict[type[BaseModel], Any] = {}
+        self._tool_agents: dict[tuple[Any, ...], Any] = {}
 
     def _config(self) -> RunnableConfig:
         return run_config(self.papel.value, self._usage_cb)
 
-    def _ask(self, system: str, prompt: str, schema: type[T]) -> T:
-        messages: list[BaseMessage] = [SystemMessage(system), HumanMessage(prompt)]
-        runnable = self._model.with_structured_output(schema, include_raw=True)
+    def _structured_runnable(self, schema: type[T]) -> Any:
+        """Get a runnable model that returns structured outputs"""
 
-        erro = None
+        runnable = self._structured.get(schema)
+        if runnable is None:
+            runnable = self._model.with_structured_output(schema, include_raw=True)
+            self._structured[schema] = runnable
+        return runnable
+
+    def _get_raw_content(self, raw: BaseMessage) -> str:
+        """Extract the raw message content, including when the response comes from tool calls (on structured output)"""
+        if isinstance(raw.content, str) and raw.content.strip():
+            return raw.content
+
+        # Structured output on many providers can be returned as a function call, so extract that
+        tool_calls = getattr(raw, "tool_calls", None) or []
+        if tool_calls:
+            return json.dumps([tc.get("args", {}) for tc in tool_calls], ensure_ascii=False)
+
+        return str(raw.content)
+
+    def _ask(self, system: str, prompt: str, schema: type[T]) -> T:
+        """Calls the stored model with structured output, while retrying.
+
+        On error, the appended message is appended as a `HumanMessage` for compatibility.
+        """
+        runnable = self._structured_runnable(schema)
+        parser = PydanticOutputParser(pydantic_object=schema)
+        messages: list[BaseMessage] = [SystemMessage(system), HumanMessage(prompt)]
+
+        error = None
         for _ in range(self._max_repairs + 1):
             result = runnable.invoke(messages, config=self._config())
             if result["parsed"] is not None:
                 return result["parsed"]
-            erro = result["parsing_error"]
-            messages += [
-                _sem_tool_calls(result["raw"]),
-                HumanMessage(f"Sua saída é inválida: {erro}\nCorrija e responda novamente."),
-            ]
-        raise AgentOutputError(f"{self.papel.value}: saída inválida após reparos: {erro}")
 
-    def _run_tool_agent(self, prompt, tools, system_prompt, response_schema, max_steps=6):
-        agent = create_agent(self._model, tools=tools, system_prompt=system_prompt, response_format=response_schema)
+            error = result["parsing_error"]
+            messages.append(
+                HumanMessage(
+                    "Sua saída anterior foi:\n"
+                    f"{self._get_raw_content(result['raw'])}\n\n"
+                    f"Sua saída é inválida: {error}\n"
+                    f"Siga este formato:\n{parser.get_format_instructions()}\n"
+                    "Corrija e responda novamente."
+                )
+            )
+        raise AgentOutputError(f"{self.papel.value}: saída inválida após reparos: {error}")
+
+    def _run_tool_agent(
+        self,
+        prompt,
+        tools,
+        system_prompt,
+        response_schema,
+        max_steps=6,
+        *,
+        configurable: dict[str, Any] | None = None,
+    ):
+        """Calls a ReAct model, with a `max_steps` value"""
+
+        # Check created agent cache
+        key = (response_schema, system_prompt, tuple(t.name for t in tools))
+        agent = self._tool_agents.get(key)
+        if agent is None:
+            agent = create_agent(self._model, tools=tools, system_prompt=system_prompt, response_format=response_schema)
+            self._tool_agents[key] = agent
+
         config = {**self._config(), "recursion_limit": 2 * max_steps + 1}
+        if configurable is not None:
+            config["configurable"] = configurable
 
         try:
             result = agent.invoke({"messages": [HumanMessage(prompt)]}, config=config)
@@ -86,12 +141,3 @@ class Agent:
         if response is None:
             raise AgentOutputError(f"{self.papel.value}: sem resposta estruturada")
         return response
-
-
-def _sem_tool_calls(raw: BaseMessage) -> BaseMessage:
-    """Com `method="function_calling"`, a resposta crua traz `tool_calls`; reenviá-la sem os
-    `ToolMessage` correspondentes é rejeitado pela API. Converte para texto."""
-    tool_calls = getattr(raw, "tool_calls", None)
-    if not tool_calls:
-        return raw
-    return AIMessage(content=json.dumps([tc["args"] for tc in tool_calls], ensure_ascii=False))
