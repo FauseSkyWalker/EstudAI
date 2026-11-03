@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +22,8 @@ class ModelConfig(BaseModel):
     # Como pedir JSON ao modelo (provedores compatíveis com OpenAI). Nem todo modelo do OpenRouter ou
     # endpoint próprio aceita json_schema; nesses, use function_calling ou json_mode.
     structured_output_method: Literal["json_schema", "function_calling", "json_mode"] = "json_schema"
+    # Corpo extra enviado ao endpoint (ex.: {"thinking": {"type": "disabled"}} no DeepSeek).
+    extra_body: dict[str, Any] = Field(default_factory=dict)
 
 
 class Settings(BaseSettings):

@@ -92,6 +92,7 @@ class Container:
                 api_key=None if config.provider == "claude_cli" else _segredo(chave_api),
                 effort=config.effort,
                 structured_output_method=config.structured_output_method,
+                extra_body=config.extra_body,
                 temperature=TEMPERATURA[papel],
                 max_retries=s.llm_max_attempts - 1,
                 timeout_s=s.llm_timeout_s,

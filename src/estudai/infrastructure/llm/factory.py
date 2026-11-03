@@ -43,6 +43,7 @@ def build_chat_model(
     base_url: str | None = None,
     effort: str | None = None,
     structured_output_method: StructuredMethod = "json_schema",
+    extra_body: dict[str, Any] | None = None,
     callbacks: Sequence[BaseCallbackHandler] = (),
     rate_limiter: BaseRateLimiter | None = None,
 ) -> BaseChatModel:
@@ -62,6 +63,7 @@ def build_chat_model(
         )
 
     extras: dict[str, Any] = {}
+    body = dict(extra_body or {})
     if provider == "gemini":
         base_url = base_url or GEMINI_OPENAI_BASE_URL
     elif provider == "openrouter":
@@ -69,7 +71,9 @@ def build_chat_model(
         # cabeçalhos opcionais de identificação do app no OpenRouter
         extras["default_headers"] = {"HTTP-Referer": "https://github.com/FauseSkyWalker/EstudAI", "X-Title": "EstudAI"}
         # pede o custo real da chamada em `usage.cost` (lido pelo UsageLedgerCallback)
-        extras["extra_body"] = {"usage": {"include": True}}
+        body.setdefault("usage", {"include": True})
+    if body:
+        extras["extra_body"] = body
     return ChatOpenAICompativel(
         model=model,
         base_url=base_url,
