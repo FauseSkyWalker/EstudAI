@@ -11,7 +11,8 @@ PERMITIDAS = {
     "domain": {"domain"},
     "ports": {"domain", "ports"},
     "agents": {"domain", "ports", "agents"},
-    "application": {"domain", "ports", "agents", "application"},
+    "application": {"domain", "ports", "agents", "application", "orchestration"},
+    "orchestration": {"domain", "ports", "agents", "application", "orchestration"},
     "infrastructure": {"domain", "ports", "agents", "application", "infrastructure"},
     "evaluation": {"domain", "ports", "agents", "application", "evaluation"},
 }

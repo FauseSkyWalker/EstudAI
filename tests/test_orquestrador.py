@@ -175,6 +175,18 @@ def test_ciclo_adaptativo_completo(kb, banco, executor, tmp_path):
     } <= set(r.uso.por_agente)
 
 
+def test_perfil_ja_diagnosticado_nao_repete_diagnostico(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path)
+    primeiro = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="A"))
+    assert primeiro.diagnostico_inicial is not None
+
+    segundo = orq.executar_ciclo("eva", T, ScriptedLearner(padrao="A"))
+
+    assert segundo.diagnostico_inicial is None
+    assert segundo.sondagem == []
+    assert segundo.versao_perfil_inicial == primeiro.versao_perfil_final
+
+
 def test_perfil_congelado_nao_diagnostica_nem_persiste(kb, banco, executor, tmp_path):
     orq, perfis = montar(kb, banco, executor, tmp_path, config=ConfigSessao(adaptativo=False, exercicios_por_sessao=2))
     r = orq.executar_ciclo("bia", T, ScriptedLearner())

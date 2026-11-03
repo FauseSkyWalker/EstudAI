@@ -32,6 +32,8 @@ from estudai.domain.perfil import Diagnostico, PerfilAluno, RegistroErro
 from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.questoes import Exercicio, OrigemItem, Particao
 from estudai.domain.tutoria import Encerramento, ResumoEstudo, TranscricaoTutoria, TrocaTutoria
+from estudai.orchestration.graph import build_cycle_graph
+from estudai.orchestration.state import CycleState
 from estudai.ports.knowledge import QuestionBank
 from estudai.ports.learner import Learner
 from estudai.ports.repositories import ProfileRepository
@@ -101,54 +103,37 @@ class Orquestrador:
         return self._config
 
     def executar_ciclo(self, aluno_id: str, topico: Topico, aluno: Learner) -> ResultadoCiclo:
-        inicio, marca, log = time.perf_counter(), self._ledger.mark(), MessageLog()
-        perfil = self._carregar_perfil(aluno_id)
-        versao_inicial = perfil.versao
-
-        diagnostico_inicial, sondagem = None, []
-        if self._config.adaptativo and not perfil.diagnosticado(topico):
-            perfil, diagnostico_inicial, sondagem = self._diagnostico_inicial(perfil, topico, aluno, log)
-
-        # Macrofase 1: tutoria
-        objetivo = ObjetivoSessao.derivar(perfil, topico, self._config.conceitos_por_sessao)
-        material = self._recuperar_material(perfil, objetivo, log)
-        transcricao = self._tutoria(perfil, objetivo, material, aluno, log)
-        resumo = self._resumir_tutoria(transcricao, material, aluno, log)
-
-        # Macrofase 2: prática
-        fornecimento = self._fornecer(perfil, topico, frozenset(sondagem), log)
-        correcoes, removidos = self._pratica(fornecimento.exercicios, aluno, log)
-
-        perfil_antes, diagnostico_final = perfil, None
-        if self._config.adaptativo:
-            perfil, diagnostico_final = self._atualizar_perfil(perfil, topico, fornecimento, correcoes, log)
-        relatorio = self._relatorio(perfil_antes, perfil, topico, correcoes, aluno, log)
+        start = time.perf_counter()
+        mark = self._ledger.mark()
+        message_log = MessageLog()
+        graph = build_cycle_graph(self, aluno, message_log)
+        state: CycleState = graph.invoke({"student_id": aluno_id, "topic": topico})
 
         return ResultadoCiclo(
             aluno_id=aluno_id,
             topico=topico,
             adaptativo=self._config.adaptativo,
-            versao_perfil_inicial=versao_inicial,
-            versao_perfil_final=perfil.versao,
-            sondagem=sondagem,
-            diagnostico_inicial=diagnostico_inicial,
-            objetivo=objetivo,
-            material=material,
-            transcricao=transcricao,
-            resumo=resumo,
-            fornecimento=fornecimento,
-            correcoes=correcoes,
-            removidos=removidos,
-            diagnostico_final=diagnostico_final,
-            relatorio=relatorio,
-            mensagens=log.mensagens,
-            uso=self._ledger.summary(since=marca),
-            latencia_s=time.perf_counter() - inicio,
+            versao_perfil_inicial=state["initial_version"],
+            versao_perfil_final=state["profile"].versao,
+            sondagem=state.get("probe_ids", []),
+            diagnostico_inicial=state.get("initial_diagnosis"),
+            objetivo=state["objective"],
+            material=state["material"],
+            transcricao=state["transcript"],
+            resumo=state.get("summary"),
+            fornecimento=state["provision"],
+            correcoes=state.get("corrections", []),
+            removidos=state.get("removed_ids", []),
+            diagnostico_final=state.get("final_diagnosis"),
+            relatorio=state.get("report"),
+            mensagens=message_log.mensagens,
+            uso=self._ledger.summary(since=mark),
+            latencia_s=time.perf_counter() - start,
         )
 
     # --- etapas -------------------------------------------------------------------------
 
-    def _carregar_perfil(self, aluno_id: str) -> PerfilAluno:
+    def _load_profile(self, aluno_id: str) -> PerfilAluno:
         perfil = self._perfis.load(aluno_id)
         if perfil is None:
             perfil = PerfilAluno.novo(aluno_id)
@@ -156,7 +141,7 @@ class Orquestrador:
                 self._perfis.save(perfil)
         return perfil
 
-    def _diagnostico_inicial(
+    def _run_initial_diagnosis(
         self, perfil: PerfilAluno, topico: Topico, aluno: Learner, log: MessageLog
     ) -> tuple[PerfilAluno, Diagnostico | None, list[str]]:
         banco = self._banco.find(topico, Particao.BANCO)
@@ -171,7 +156,7 @@ class Orquestrador:
                     item_id=questao.id,
                     conceitos=questao.conceitos,
                     dificuldade=questao.dificuldade,
-                    correta=_acertou(resposta, questao.gabarito),
+                    correta=_is_correct(resposta, questao.gabarito),
                 )
             )
         if not evidencias:
@@ -194,7 +179,7 @@ class Orquestrador:
         )
         return perfil, diagnostico, [q.id for q in sondagem]
 
-    def _recuperar_material(self, perfil: PerfilAluno, objetivo: ObjetivoSessao, log: MessageLog) -> PacoteMaterial:
+    def _retrieve_material(self, perfil: PerfilAluno, objetivo: ObjetivoSessao, log: MessageLog) -> PacoteMaterial:
         nivel = objetivo.nivel_aluno.value if objetivo.nivel_aluno else "não diagnosticado"
         pedido = f"{objetivo.descricao} Nível do aluno: {nivel}."
         log.send(Papel.TUTOR, Papel.CONTEUDO, TipoMensagem.PEDIDO, {"pedido": pedido})
@@ -202,7 +187,7 @@ class Orquestrador:
         log.send(Papel.CONTEUDO, Papel.TUTOR, TipoMensagem.MATERIAL, material, referencias=material.referencias)
         return material
 
-    def _tutoria(
+    def _run_tutoring(
         self,
         perfil: PerfilAluno,
         objetivo: ObjetivoSessao,
@@ -234,7 +219,7 @@ class Orquestrador:
             transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno, resposta_aluno=resposta))
         return transcricao
 
-    def _resumir_tutoria(
+    def _summarize_tutoring(
         self, transcricao: TranscricaoTutoria, material: PacoteMaterial, aluno: Learner, log: MessageLog
     ) -> ResumoEstudo | None:
         if not transcricao.trocas:
@@ -244,10 +229,10 @@ class Orquestrador:
         except AgentOutputError:
             return None
         log.send(Papel.RESUMO, Papel.ALUNO, TipoMensagem.RESUMO, resumo)
-        aluno.notify(_formatar_resumo(resumo))
+        aluno.notify(_format_summary(resumo))
         return resumo
 
-    def _fornecer(
+    def _provide_exercises(
         self, perfil: PerfilAluno, topico: Topico, excluir: frozenset[str], log: MessageLog
     ) -> ResultadoFornecimento:
         fornecimento = self._fornecedor.fornecer(perfil, topico, self._config.exercicios_por_sessao, excluir)
@@ -260,7 +245,7 @@ class Orquestrador:
             )
         return fornecimento
 
-    def _pratica(
+    def _run_practice(
         self, exercicios: list[Exercicio], aluno: Learner, log: MessageLog
     ) -> tuple[list[Correcao], list[str]]:
         correcoes, removidos = [], []
@@ -274,7 +259,7 @@ class Orquestrador:
             )
             resposta = aluno.solve(item.id, item)
             log.send(Papel.ALUNO, Papel.CORRETOR, TipoMensagem.RESPOSTA, resposta)
-            correcao = self._corrigir(item, resposta)
+            correcao = self._grade_answer(item, resposta)
 
             if correcao.gabarito_suspeito and item.origem == OrigemItem.GERADO:
                 revalidacao = self._validador.validar(item)
@@ -291,11 +276,11 @@ class Orquestrador:
             correcoes.append(correcao)
         return correcoes, removidos
 
-    def _corrigir(self, item: Exercicio, resposta: RespostaAluno) -> Correcao:
+    def _grade_answer(self, item: Exercicio, resposta: RespostaAluno) -> Correcao:
         try:
             return self._corretor.corrigir(item, resposta)
         except AgentOutputError:
-            correta = _acertou(resposta, item.gabarito)
+            correta = _is_correct(resposta, item.gabarito)
             return Correcao(
                 item_id=item.id,
                 escolha=resposta.escolha,
@@ -305,7 +290,7 @@ class Orquestrador:
                 feedback="(análise detalhada indisponível)",
             )
 
-    def _atualizar_perfil(
+    def _update_profile(
         self,
         perfil: PerfilAluno,
         topico: Topico,
@@ -349,7 +334,7 @@ class Orquestrador:
         )
         return perfil, diagnostico
 
-    def _relatorio(
+    def _build_report(
         self,
         antes: PerfilAluno,
         depois: PerfilAluno,
@@ -369,11 +354,11 @@ class Orquestrador:
         return relatorio
 
 
-def _acertou(resposta: RespostaAluno, gabarito: str) -> bool:
+def _is_correct(resposta: RespostaAluno, gabarito: str) -> bool:
     return (resposta.escolha or "").strip().upper() == gabarito
 
 
-def _formatar_resumo(resumo: ResumoEstudo) -> str:
+def _format_summary(resumo: ResumoEstudo) -> str:
     partes = [f"# {resumo.titulo}", *[f"- {p}" for p in resumo.pontos_chave]]
     if resumo.formulas:
         partes += ["Fórmulas:", *[f"  {f}" for f in resumo.formulas]]
