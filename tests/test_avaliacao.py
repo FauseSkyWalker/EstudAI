@@ -114,3 +114,15 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
         ("rubrica", Condicao.C3),
     }
     _ = handlers  # reaproveitado via `montar`
+
+
+def test_concordancia_entre_juizes_tolera_falhas_e_mede_proximidade():
+    from estudai.evaluation.relatorio import _concordancia_adjacente, _kappa
+
+    # notas de 2 juízes por (sessão, dimensão); o 3º item teve falha de um juiz e é ignorado
+    notas = [[5, 3], [4, 4], [3], [2, 3], [4, 4]]
+    assert _concordancia_adjacente(notas) == pytest.approx(3 / 4)  # só [5, 3] difere em mais de 1 ponto
+    k = _kappa(notas)
+    assert k is not None and k < 1.0
+    assert _kappa([[True, True], [False, False], [True, True]]) == 1.0
+    assert _kappa([[4], [3]]) is None  # um juiz só: sem κ

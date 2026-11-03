@@ -8,6 +8,7 @@ import json
 from typing import Any, TypeVar
 
 from langchain.agents import create_agent
+from langchain.agents.structured_output import ProviderStrategy, StructuredOutputError, ToolStrategy
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -110,6 +111,19 @@ class Agent:
             )
         raise AgentOutputError(f"{self.papel.value}: saída inválida após reparos: {error}")
 
+    def _response_strategy(self, schema: type[BaseModel]) -> Any:
+        """Como o agente de ferramentas obtém a resposta final estruturada.
+
+        Por padrão, o LangChain usa `ToolStrategy` (uma ferramenta de resposta com `tool_choice="any"`)
+        em modelos que ele não reconhece, e alguns provedores recusam isso: a API da Meta (Muse Spark)
+        só aceita `tool_choice="auto"`. Por isso a estratégia segue o `structured_output_method` do modelo:
+        JSON Schema nativo → `ProviderStrategy`; `function_calling` → `ToolStrategy`.
+        """
+        metodo = getattr(self._model, "structured_output_method", None)
+        if metodo is None:
+            return schema  # modelo sem essa configuração (ex.: Claude CLI, testes): escolha do LangChain
+        return ToolStrategy(schema) if metodo == "function_calling" else ProviderStrategy(schema)
+
     def _run_tool_agent(
         self,
         prompt,
@@ -126,7 +140,12 @@ class Agent:
         key = (response_schema, system_prompt, tuple(t.name for t in tools))
         agent = self._tool_agents.get(key)
         if agent is None:
-            agent = create_agent(self._model, tools=tools, system_prompt=system_prompt, response_format=response_schema)
+            agent = create_agent(
+                self._model,
+                tools=tools,
+                system_prompt=system_prompt,
+                response_format=self._response_strategy(response_schema),
+            )
             self._tool_agents[key] = agent
 
         config = {**self._config(), "recursion_limit": 2 * max_steps + 1}
@@ -137,6 +156,8 @@ class Agent:
             result = agent.invoke({"messages": [HumanMessage(prompt)]}, config=config)
         except GraphRecursionError as exc:
             raise AgentOutputError(f"{self.papel.value}: limite de passos excedido") from exc
+        except StructuredOutputError as exc:  # resposta final fora do schema: falha do agente, não do ciclo
+            raise AgentOutputError(f"{self.papel.value}: resposta final inválida: {exc}") from exc
         response = result.get("structured_response")
         if response is None:
             raise AgentOutputError(f"{self.papel.value}: sem resposta estruturada")

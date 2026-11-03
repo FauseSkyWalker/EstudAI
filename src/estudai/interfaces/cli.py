@@ -241,8 +241,13 @@ def relatorio(arquivo: Path, orcamento_usd: Annotated[float | None, typer.Option
             f"mediana Δ={comp.teste['mediana_diferenca']:+.3f})"
         )
     console.print(
-        f"κ juízes (rubrica): {_fmt(rel.kappa_juizes_rubrica)} · κ resolutores: {_fmt(rel.kappa_resolutores)}"
+        f"κ juízes — rubrica: {_fmt(rel.kappa_juizes_rubrica)} "
+        f"(diferença ≤ 1 ponto em {_fmt(rel.concordancia_juizes_rubrica)}) · "
+        f"defeito crítico nos exercícios: {_fmt(rel.kappa_juizes_itens)} · "
+        f"κ resolutores: {_fmt(rel.kappa_resolutores)}"
     )
+    if rel.kappa_juizes_rubrica is None:
+        console.print("[dim]κ entre juízes exige 2+ juízes em ESTUDAI_JUDGES.[/dim]")
     for nome, ok in rel.criterios.items():
         marca = {True: "[green]atingido[/green]", False: "[red]não atingido[/red]", None: "[dim]n/a[/dim]"}[ok]
         console.print(f"Critério {nome}: {marca}")

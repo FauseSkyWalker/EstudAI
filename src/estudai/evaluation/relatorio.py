@@ -36,12 +36,30 @@ class Comparacao(BaseModel):
 class Relatorio(BaseModel):
     condicoes: list[ResumoCondicao]
     comparacoes: list[Comparacao]
-    kappa_juizes_rubrica: float | None
+    kappa_juizes_rubrica: float | None  # Fleiss sobre (sessão × dimensão), notas 1–5
+    concordancia_juizes_rubrica: float | None  # fração de notas em que os juízes diferem em até 1 ponto
+    kappa_juizes_itens: float | None  # Fleiss sobre `defeito_critico` de cada exercício
     kappa_resolutores: float | None
     criterios: dict[str, bool | None]
 
 
 _DIMENSOES = ("fidelidade_material", "personalizacao", "aplicabilidade", "profundidade_logica")
+
+
+def _completos(avaliacoes: list[list]) -> list[list]:
+    """Fleiss exige o mesmo número de avaliadores por item: descarta itens em que algum juiz falhou."""
+    n = max((len(a) for a in avaliacoes), default=0)
+    return [a for a in avaliacoes if n >= 2 and len(a) == n]
+
+
+def _kappa(avaliacoes: list[list]) -> float | None:
+    completos = _completos(avaliacoes)
+    return fleiss_kappa(completos) if completos else None
+
+
+def _concordancia_adjacente(avaliacoes: list[list[int]]) -> float | None:
+    completos = _completos(avaliacoes)
+    return media([float(max(a) - min(a) <= 1) for a in completos]) if completos else None
 
 
 def _rubrica_execucao(r: ResultadoExecucao) -> float | None:
@@ -111,10 +129,10 @@ def gerar_relatorio(
     ]
 
     ciclos = [c for r in resultados for c in r.ciclos]
-    juizes = [[round(n.media) for n in c.notas_tutoria] for c in ciclos if len(c.notas_tutoria) >= 2]
-    votos = [v for c in ciclos for v in c.votos_painel if len(v) >= 2]
-    kappa_juizes = fleiss_kappa(juizes) if juizes else None
-    kappa_resolutores = fleiss_kappa(votos) if votos else None
+    # concordância entre juízes (Seção 5.3): cada (sessão, dimensão) e cada exercício é um item
+    notas_rubrica = [[getattr(n, d) for n in c.notas_tutoria] for c in ciclos for d in _DIMENSOES]
+    defeitos = [[a.defeito_critico for a in item] for c in ciclos for item in c.avaliacoes_itens]
+    votos = [v for c in ciclos for v in c.votos_painel]
 
     c1, c2 = resumos.get(Condicao.C1), resumos.get(Condicao.C2)
     criterios: dict[str, bool | None] = {
@@ -139,7 +157,9 @@ def gerar_relatorio(
     return Relatorio(
         condicoes=list(resumos.values()),
         comparacoes=comparacoes,
-        kappa_juizes_rubrica=kappa_juizes,
-        kappa_resolutores=kappa_resolutores,
+        kappa_juizes_rubrica=_kappa(notas_rubrica),
+        concordancia_juizes_rubrica=_concordancia_adjacente(notas_rubrica),
+        kappa_juizes_itens=_kappa(defeitos),
+        kappa_resolutores=_kappa(votos),
         criterios=criterios,
     )

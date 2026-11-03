@@ -198,3 +198,44 @@ def test_corretor_tem_corretude_deterministica():
     # acerto sem resolução não gasta chamada de LLM
     Corretor(llm, UsageLedgerCallback()).corrigir(item, RespostaAluno(item_id="e1", escolha="c"))
     assert len(llm.requests) == 1
+
+
+def test_estrategia_de_resposta_segue_o_metodo_do_modelo():
+    """A API da Meta (Muse) recusa tool_choice forçado; com JSON Schema nativo o agente usa ProviderStrategy."""
+    from types import SimpleNamespace
+
+    from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
+
+    def estrategia(modelo):
+        return AgenteTeste(modelo)._response_strategy(Saida)
+
+    assert isinstance(estrategia(SimpleNamespace(structured_output_method="json_schema")), ProviderStrategy)
+    assert isinstance(estrategia(SimpleNamespace(structured_output_method="function_calling")), ToolStrategy)
+    assert estrategia(SimpleNamespace()) is Saida  # sem configuração: escolha automática do LangChain
+
+
+def test_rascunho_aceita_letra_e_converte_texto_da_alternativa():
+    from pydantic import ValidationError
+
+    from estudai.agents.gerador import RascunhoExercicio
+
+    base = {"enunciado": "?", "alternativas": ["1", "(x - 1)/6", "3", "4", "5"], "resolucao": "."}
+    assert RascunhoExercicio(**base, gabarito="c").gabarito == "C"
+    assert RascunhoExercicio(**base, gabarito="(X - 1)/6").gabarito == "B"  # caso real visto com o Muse
+    with pytest.raises(ValidationError):
+        RascunhoExercicio(**base, gabarito="nenhuma")
+
+
+def test_rascunho_incoerente_vira_falha_do_agente_e_nao_derruba_o_ciclo(monkeypatch):
+    from estudai.agents.gerador import GeradorExercicios, RascunhoExercicio
+    from estudai.domain.perfil import PerfilAluno
+    from estudai.domain.planejamento import planejar_pratica
+
+    gerador = GeradorExercicios(FakeChatModel({}), conteudo=None, executor=None)
+    ruim = RascunhoExercicio.model_construct(
+        enunciado="?", alternativas=["1", "2", "3", "4", "5"], gabarito="Z", resolucao=".", referencias=[]
+    )
+    monkeypatch.setattr(gerador, "_run_tool_agent", lambda *a, **k: ruim)
+    plano = planejar_pratica(PerfilAluno.novo("x"), Topico.FUNCOES, 1)[0]
+    with pytest.raises(AgentOutputError, match="rascunho inválido"):
+        gerador.gerar({}, Topico.FUNCOES, plano, [])
