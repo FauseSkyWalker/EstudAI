@@ -1,7 +1,7 @@
 """Pipeline completo com LLM roteirizado e implementações reais de RAG, sandbox e persistência."""
 
 import pytest
-from fakes import FakeChatModel, ScriptedLearner, react_final
+from fakes import FakeChatModel, ScriptedLearner, structured_final, tool_call
 
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
@@ -51,21 +51,23 @@ def handlers(corretor_suspeita: bool = False, voto_painel: str = "B") -> dict:
             }
         ],
         "conteudo": [
-            {"pensamento": "", "acao": "busca_hibrida", "entrada": {"consulta": "função quadrática vértice"}},
-            react_final({"trechos": ["wb-quad"], "questoes_referencia": []}),
+            tool_call("busca_hibrida", {"consulta": "função quadrática vértice"}, "call-search"),
+            structured_final("SelecaoConteudo", {"trechos": ["wb-quad"], "questoes_referencia": []}, "call-final"),
         ],
         "tutor": tutor,
         ("resumo", "ResumoEstudo"): [{"titulo": "Função quadrática", "pontos_chave": ["vértice em -b/2a"]}],
         ("resumo", "RelatorioPratica"): [{"desempenho": "Bom progresso."}],
         "gerador_exercicios": [
-            react_final(
+            structured_final(
+                "RascunhoExercicio",
                 {
                     "enunciado": "Quanto vale f(2) se f(x) = x² + 1?",
                     "alternativas": ["4", "5", "6", "7", "8"],
                     "gabarito": "B",
                     "resolucao": "2² + 1 = 5",
                     "codigo_verificacao": "print(2**2 + 1)",
-                }
+                },
+                "call-final",
             )
         ],
         "painel_resolutores": [{"raciocinio": "", "resposta": voto_painel}],

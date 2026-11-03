@@ -53,7 +53,7 @@ def _texto(content: str | list) -> str:
 
 
 def _serializar(conversa: list[BaseMessage]) -> str:
-    """O CLI recebe um único prompt; históricos (reparo de saída, ReAct) viram uma transcrição."""
+    """O CLI recebe um único prompt; históricos (reparo de saída, laço de ferramentas) viram uma transcrição."""
     if len(conversa) == 1:
         return _texto(conversa[0].content)
     rotulos = {"human": "USUÁRIO", "ai": "ASSISTENTE"}

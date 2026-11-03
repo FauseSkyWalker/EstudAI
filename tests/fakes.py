@@ -125,8 +125,18 @@ class FakeChatModel(BaseChatModel):
         return self
 
 
-def react_final(entrada: dict) -> dict:
-    return {"pensamento": "pronto", "acao": "final", "entrada": entrada}
+def tool_call(name: str, args: dict[str, Any], call_id: str = "call-1") -> AIMessage:
+    """Resposta nativa de tool calling: o modelo pede a ferramenta `name`."""
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}],
+        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+    )
+
+
+def structured_final(schema_name: str, values: dict[str, Any], call_id: str = "call-final") -> AIMessage:
+    """Resposta nativa de saída estruturada: o modelo chama a ferramenta sintética do schema."""
+    return tool_call(schema_name, values, call_id)
 
 
 class ScriptedLearner:

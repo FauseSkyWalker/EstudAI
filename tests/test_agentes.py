@@ -1,18 +1,23 @@
 import pytest
-from fakes import FakeChatModel, react_final
+from fakes import FakeChatModel, structured_final, tool_call
+from langchain_core.tools import tool
 from pydantic import BaseModel
 
 from estudai.agents.base import Agent, AgentOutputError
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
 from estudai.agents.diagnosticador import Diagnosticador, Evidencia
-from estudai.agents.react import ReActRunner, Tool
+from estudai.agents.gerador import GeradorExercicios
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
+from estudai.domain.material import PacoteMaterial, TipoDocumento, TrechoRecuperado
 from estudai.domain.mensagens import Papel
 from estudai.domain.perfil import NivelDominio, PerfilAluno
-from estudai.domain.questoes import Dificuldade, Exercicio
+from estudai.domain.planejamento import ItemPlanejado
+from estudai.domain.questoes import Dificuldade, Exercicio, OrigemItem
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
+from estudai.ports.knowledge import SearchMode
+from estudai.ports.tools import ExecutionResult
 
 
 class Saida(BaseModel):
@@ -40,43 +45,121 @@ def test_desiste_apos_limite_de_reparos():
     assert len(llm.requests) == 2
 
 
-class Args(BaseModel):
-    x: int
+class FerramentaTeste(Agent):
+    papel = Papel.TUTOR
+
+    def pedir(self, tools, *, max_steps: int = 4) -> Saida:
+        return self._run_tool_agent("tarefa", tools, "sys", Saida, max_steps)
 
 
-def test_react_usa_ferramenta_e_recupera_de_erros():
-    passos = [
-        {"pensamento": "?", "acao": "inexistente", "entrada": {}},
-        {"pensamento": "dobrar", "acao": "dobro", "entrada": {"x": "não-número"}},
-        {"pensamento": "dobrar", "acao": "dobro", "entrada": {"x": 21}},
-        react_final({"valor": 42}),
-    ]
-    llm = FakeChatModel({"teste": passos})
-    dobro = Tool("dobro", "dobra x", Args, lambda a: str(a.x * 2))
-    saida, trace = ReActRunner(llm, caller="teste", max_steps=5).run("sys", "tarefa", [dobro], Saida)
-
-    assert saida.valor == 42
-    observacoes = [obs for _, obs in trace.steps]
-    assert "não existe" in observacoes[0]
-    assert "Argumentos inválidos" in observacoes[1]
-    assert observacoes[2] == "42"
+@tool
+def dobro(x: int) -> str:
+    """Dobra x."""
+    return str(x * 2)
 
 
-def test_react_estoura_limite_de_passos():
-    llm = FakeChatModel({"teste": [{"pensamento": "", "acao": "dobro", "entrada": {"x": 1}}]})
-    dobro = Tool("dobro", "dobra x", Args, lambda a: str(a.x * 2))
+def test_tool_agent_usa_ferramenta_e_retorna_estruturado():
+    llm = FakeChatModel(
+        {
+            "tutor": [
+                tool_call("dobro", {"x": 21}, "call-dobro"),
+                structured_final("Saida", {"valor": 42}, "call-final"),
+            ]
+        }
+    )
+    assert FerramentaTeste(llm).pedir([dobro]).valor == 42
+
+
+def test_tool_agent_respeita_limite_de_passos():
+    llm = FakeChatModel({"tutor": [tool_call("dobro", {"x": 1}, "call-dobro")]})
     with pytest.raises(AgentOutputError):
-        ReActRunner(llm, caller="teste", max_steps=3).run("sys", "tarefa", [dobro], Saida)
-    assert "ÚLTIMO PASSO" in llm.requests[-1].messages[-1].content
+        FerramentaTeste(llm).pedir([dobro], max_steps=1)
 
 
-def test_conteudo_descarta_ids_inventados_e_entrega_texto_original(kb):
+class _ConteudoStub:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def buscar(self, pedido, topico=None, incluir_questoes=True):
+        self.calls.append((pedido, topico, incluir_questoes))
+        return PacoteMaterial(
+            pedido=pedido,
+            trechos=[
+                TrechoRecuperado(
+                    doc_id="wb-quad",
+                    tipo=TipoDocumento.MATERIAL,
+                    fonte="wikibooks",
+                    texto="A função quadrática tem vértice em x = -b/2a.",
+                    score=0.9,
+                )
+            ],
+        )
+
+
+class _ExecutorStub:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def run(self, code, timeout_s=None):
+        self.calls.append((code, timeout_s))
+        return ExecutionResult(ok=True, stdout="5")
+
+
+def test_gerador_usa_ferramentas_e_entrega_rascunho():
     passos = [
-        {"pensamento": "", "acao": "busca_hibrida", "entrada": {"consulta": "vértice da parábola função quadrática"}},
-        react_final({"trechos": ["id-inventado", "wb-quad"], "questoes_referencia": ["Q1"]}),
+        tool_call("consultar_conteudo", {"pedido": "função quadrática"}, "call-conteudo"),
+        tool_call("executar_python", {"code": "print(2**2 + 1)", "timeout_s": 5}, "call-python"),
+        structured_final(
+            "RascunhoExercicio",
+            {
+                "enunciado": "Quanto vale f(2) se f(x) = x² + 1?",
+                "alternativas": ["4", "5", "6", "7", "8"],
+                "gabarito": "B",
+                "resolucao": "2² + 1 = 5",
+                "codigo_verificacao": "print(2**2 + 1)",
+            },
+            "call-final",
+        ),
     ]
+    conteudo, executor = _ConteudoStub(), _ExecutorStub()
+    gerador = GeradorExercicios(FakeChatModel({"gerador_exercicios": passos}), conteudo, executor)
+    plano = ItemPlanejado(conceito="funcao_quadratica", dificuldade=Dificuldade.MEDIA)
+
+    item = gerador.gerar({}, Topico.FUNCOES, plano, [])
+
+    assert conteudo.calls == [("função quadrática", Topico.FUNCOES, True)]
+    assert executor.calls == [("print(2**2 + 1)", 5.0)]
+    assert item.topico == Topico.FUNCOES
+    assert item.origem == OrigemItem.GERADO
+    assert item.gabarito == "B"
+    assert item.codigo_verificacao == "print(2**2 + 1)"
+
+
+def test_conteudo_usa_ferramenta_e_descarta_ids_inventados(kb, monkeypatch):
+    passos = [
+        tool_call("busca_hibrida", {"consulta": "vértice da parábola função quadrática"}, "call-search"),
+        structured_final(
+            "SelecaoConteudo",
+            {"trechos": ["id-inventado", "wb-quad"], "questoes_referencia": ["Q1"]},
+            "call-final",
+        ),
+    ]
+    chamadas = []
+    busca_original = kb.search
+
+    def search(*args, **kwargs):
+        chamadas.append((args, kwargs))
+        return busca_original(*args, **kwargs)
+
+    monkeypatch.setattr(kb, "search", search)
     agente = AgenteConteudo(FakeChatModel({"conteudo": passos}), kb, k=2, min_score=0.01)
     pacote = agente.buscar("ensinar função quadrática", Topico.FUNCOES)
+
+    # a ferramenta de busca foi executada, não o fallback direto
+    assert chamadas
+    assert chamadas[0][0][0] == "vértice da parábola função quadrática"
+    assert chamadas[0][0][1] == SearchMode.HIBRIDA
+    assert chamadas[0][1]["topico"] == Topico.FUNCOES
 
     ids = [t.doc_id for t in pacote.trechos]
     assert ids[0] == "wb-quad" and "id-inventado" not in ids

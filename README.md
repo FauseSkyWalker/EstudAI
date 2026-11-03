@@ -22,8 +22,8 @@ application/ ──► agents/ ──► ports/ ──► domain/
 | Camada | Pasta | Responsabilidade | Depende de |
 |---|---|---|---|
 | Domínio | `domain/` | Entidades e regras puras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens | — |
-| Portas | `ports/` | Contratos: `LLMClient`, `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `Learner` | domínio |
-| Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; laço ReAct | domínio, portas |
+| Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `Learner` | domínio |
+| Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
 | Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens | agentes, domínio, portas |
 | Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox, ingestão | portas (implementa) |
 | Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
@@ -35,7 +35,7 @@ Consequências práticas:
   implementada pelo aluno real (`interfaces/console.py`) e pelo simulado (`evaluation/aluno_simulado.py`).
 - **Condições experimentais sem `if` no orquestrador**: C2 é `ConfigSessao(adaptativo=False)`;
   C3 troca a estratégia `ExerciseProvider` (gerados → banco real).
-- **Testável offline**: todos os agentes recebem `LLMClient` por injeção; os testes usam um LLM roteirizado.
+- **Testável offline**: todos os agentes recebem um `BaseChatModel` por injeção; os testes usam um LLM roteirizado.
 
 ### Mapeamento metodologia → código
 
@@ -43,15 +43,15 @@ Consequências práticas:
 |---|---|
 | Agente Diagnosticador | `agents/diagnosticador.py` (sondagem por cobertura de conceitos + estimativa LLM com fallback determinístico) |
 | Agente Tutor por Disciplina | `agents/tutor.py` (uma instância por `Disciplina`) |
-| Agente de Conteúdo (ReAct, RAG) | `agents/conteudo.py` (busca semântica/textual/híbrida; só seleciona ids → fidelidade por construção) |
+| Agente de Conteúdo (LangChain + ferramentas, RAG) | `agents/conteudo.py` (busca semântica/textual/híbrida; só seleciona ids → fidelidade por construção) |
 | Agente de Resumo | `agents/resumo.py` (resumo de revisão + relatório da prática) |
-| Agente Gerador de Exercícios (ReAct) | `agents/gerador.py` (ferramentas `consultar_conteudo` e `executar_python`) |
+| Agente Gerador de Exercícios (LangChain + ferramentas) | `agents/gerador.py` (ferramentas `consultar_conteudo` e `executar_python`) |
 | Agente Corretor | `agents/corretor.py` (corretude determinística; LLM só diagnostica o raciocínio) |
 | Painel de resolutores + verificação simbólica | `agents/resolutor.py`, `application/validacao.py` |
 | Orquestração centralizada e sequencial | `application/orquestrador.py` |
 | Perfil persistente versionado | `domain/perfil.py`, `infrastructure/persistence/json_profiles.py` |
 | Protocolo de mensagens JSON (Apêndice A) | `domain/mensagens.py`, `application/mensageria.py` |
-| Retry / reenvio com instrução de correção | `infrastructure/llm/decorators.py`, `agents/base.py` |
+| Retry / reenvio com instrução de correção | `agents/base.py` |
 | Níveis "Fronteira" / "Econômico" | `settings.py` (`frontier`, `economic`), `bootstrap.py` |
 | Sandbox Python (sympy, sem rede, timeout) | `infrastructure/sandbox/python_executor.py` |
 | Bases BLUEX / ENEM Challenge / ENEM 2022–24 | `infrastructure/ingestion/sources.py` |
@@ -66,7 +66,7 @@ Consequências práticas:
 [diagnóstico inicial]  Diagnosticador escolhe questões do banco → aluno responde → nível/lacunas → perfil v+1
 tutoria                objetivo derivado do perfil → Conteúdo (RAG) → Tutor ⇄ aluno (até objetivo ou limite)
 resumo                 Agente de Resumo → material de revisão
-prática                Gerador (ReAct) → verificação simbólica + painel → itens aprovados
+prática                Gerador (LangChain + ferramentas) → verificação simbólica + painel → itens aprovados
 correção               aluno resolve → Corretor (gabarito suspeito → painel → item removido e notificado)
 atualização            Diagnosticador usa as correções → perfil v+1 → relatório da prática
 ```

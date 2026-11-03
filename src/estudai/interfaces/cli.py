@@ -255,7 +255,10 @@ def web(porta: int = 8501) -> None:
     import subprocess
 
     if importlib.util.find_spec("streamlit") is None:
-        console.print("[red]Streamlit não instalado.[/red] Rode: [bold]uv sync --extra ingest --extra web[/bold] (o uv sync remove os extras não listados)")
+        console.print(
+            "[red]Streamlit não instalado.[/red] Rode: [bold]uv sync --extra ingest --extra web[/bold] "
+            "(o uv sync remove os extras não listados)"
+        )
         raise typer.Exit(code=1)
     app_web = Path(__file__).with_name("web") / "app.py"
     raise typer.Exit(

@@ -1,4 +1,4 @@
-"""Agente Gerador de Exercícios (modelo de fronteira, ReAct).
+"""Agente Gerador de Exercícios (modelo de fronteira, LangChain + ferramentas).
 
 Gera um item por vez para um conceito/dificuldade planejados. Ferramentas:
 - `consultar_conteudo`: aciona o Agente de Conteúdo (questões de referência e material);
@@ -12,9 +12,9 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
-from estudai.agents.base import to_json
+from estudai.agents.base import Agent, to_json
 from estudai.agents.conteudo import AgenteConteudo
-from estudai.agents.react import ReActRunner, Tool
+from estudai.agents.tools import call_conteudo_agent_tool, python_tool
 from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
 from estudai.domain.planejamento import ItemPlanejado
@@ -35,14 +35,6 @@ Requisitos:
 """
 
 
-class _ConsultaArgs(BaseModel):
-    pedido: str = Field(min_length=3)
-
-
-class _CodigoArgs(BaseModel):
-    codigo: str = Field(min_length=1)
-
-
 class RascunhoExercicio(BaseModel):
     enunciado: str
     alternativas: list[str] = Field(min_length=5, max_length=5)
@@ -52,7 +44,7 @@ class RascunhoExercicio(BaseModel):
     referencias: list[str] = Field(default_factory=list)
 
 
-class GeradorExercicios:
+class GeradorExercicios(Agent):
     papel = Papel.GERADOR_EXERCICIOS
 
     def __init__(
@@ -63,20 +55,25 @@ class GeradorExercicios:
         *,
         usage_cb: BaseCallbackHandler | None = None,
         max_steps: int = 6,
+        **kw,
     ) -> None:
+        super().__init__(model, usage_cb, **kw)
+
         self._conteudo = conteudo
         self._executor = executor
-        self._runner = ReActRunner(model, caller=self.papel.value, usage_cb=usage_cb, max_steps=max_steps)
+        self._max_steps = max_steps
 
     def gerar(self, perfil: dict, topico: Topico, plano: ItemPlanejado, evitar: list[str]) -> Exercicio:
-        tools = [self._ferramenta_conteudo(topico), self._ferramenta_python()]
-        tarefa = (
+        tools = [python_tool(self._executor), call_conteudo_agent_tool(self._conteudo, topico)]
+
+        prompt = (
             f"Tópico: {topico.value}\nConceito-alvo: {plano.conceito}\n"
             f"Dificuldade-alvo: {plano.dificuldade.value}\n"
             f"Perfil do aluno:\n{to_json(perfil)}\n"
             "Não repita estes enunciados já usados:\n" + ("\n".join(f"- {e[:160]}" for e in evitar) or "(nenhum)")
         )
-        rascunho, _ = self._runner.run(SYSTEM, tarefa, tools, RascunhoExercicio)
+
+        rascunho = self._run_tool_agent(prompt, tools, SYSTEM, RascunhoExercicio, self._max_steps)
         return Exercicio(
             id=f"gen-{uuid4().hex[:8]}",
             topico=topico,
@@ -89,29 +86,4 @@ class GeradorExercicios:
             origem=OrigemItem.GERADO,
             referencias=rascunho.referencias,
             codigo_verificacao=rascunho.codigo_verificacao,
-        )
-
-    def _ferramenta_conteudo(self, topico: Topico) -> Tool:
-        def consultar(args: _ConsultaArgs) -> str:
-            return self._conteudo.buscar(args.pedido, topico).como_contexto(max_chars=3000)
-
-        return Tool(
-            name="consultar_conteudo",
-            description="Pede ao Agente de Conteúdo material e questões de referência.",
-            args_model=_ConsultaArgs,
-            fn=consultar,
-        )
-
-    def _ferramenta_python(self) -> Tool:
-        def executar(args: _CodigoArgs) -> str:
-            r = self._executor.run(args.codigo)
-            if r.timed_out:
-                return "Tempo esgotado."
-            return f"ok={r.ok}\nstdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
-
-        return Tool(
-            name="executar_python",
-            description="Executa Python isolado (sem rede, com timeout). Use print() para ver resultados.",
-            args_model=_CodigoArgs,
-            fn=executar,
         )

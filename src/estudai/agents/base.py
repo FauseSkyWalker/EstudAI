@@ -10,10 +10,12 @@ composição (`bootstrap.py`); o agente só identifica quem chamou (`metadata.ca
 import json
 from typing import Any, TypeVar
 
+from langchain.agents import create_agent
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 from estudai.domain.mensagens import Papel
@@ -71,6 +73,19 @@ class Agent:
                 HumanMessage(f"Sua saída é inválida: {erro}\nCorrija e responda novamente."),
             ]
         raise AgentOutputError(f"{self.papel.value}: saída inválida após reparos: {erro}")
+
+    def _run_tool_agent(self, prompt, tools, system_prompt, response_schema, max_steps=6):
+        agent = create_agent(self._model, tools=tools, system_prompt=system_prompt, response_format=response_schema)
+        config = {**self._config(), "recursion_limit": 2 * max_steps + 1}
+
+        try:
+            result = agent.invoke({"messages": [HumanMessage(prompt)]}, config=config)
+        except GraphRecursionError as exc:
+            raise AgentOutputError(f"{self.papel.value}: limite de passos excedido") from exc
+        response = result.get("structured_response")
+        if response is None:
+            raise AgentOutputError(f"{self.papel.value}: sem resposta estruturada")
+        return response
 
 
 def _sem_tool_calls(raw: BaseMessage) -> BaseMessage:

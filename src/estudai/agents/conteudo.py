@@ -1,4 +1,4 @@
-"""Agente de Conteúdo (modelo econômico, ReAct): recupera e ranqueia material de apoio.
+"""Agente de Conteúdo (modelo econômico, LangChain + ferramentas): recupera e ranqueia material de apoio.
 
 Validação de fidelidade: o agente apenas *seleciona* ids de documentos que as ferramentas
 de fato retornaram; o texto entregue é sempre o original da base. Ids inventados são
@@ -9,7 +9,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
-from estudai.agents.react import ReActRunner, Tool
+from estudai.agents.base import Agent, AgentOutputError
+from estudai.agents.tools import search_tool
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import PacoteMaterial, TipoDocumento, TrechoRecuperado
 from estudai.domain.mensagens import Papel
@@ -24,18 +25,13 @@ as questões de referência mais úteis para o pedido recebido.
 """
 
 
-class _BuscaArgs(BaseModel):
-    consulta: str = Field(min_length=2)
-    tipo: TipoDocumento | None = Field(default=None, description="'material', 'questao' ou null")
-
-
 class SelecaoConteudo(BaseModel):
     trechos: list[str] = Field(default_factory=list, description="ids de material, em ordem de relevância")
     questoes_referencia: list[str] = Field(default_factory=list, description="ids de questões")
     justificativa: str = ""
 
 
-class AgenteConteudo:
+class AgenteConteudo(Agent):
     papel = Papel.CONTEUDO
 
     def __init__(
@@ -47,68 +43,55 @@ class AgenteConteudo:
         k: int = 4,
         min_score: float = 0.2,
         max_steps: int = 4,
+        **kw,
     ) -> None:
+        super().__init__(model, usage_cb, **kw)
         self._kb = kb
         self._k = k
         self._min_score = min_score
-        self._runner = ReActRunner(model, caller=self.papel.value, usage_cb=usage_cb, max_steps=max_steps)
+        self._max_steps = max_steps
 
     def buscar(self, pedido: str, topico: Topico | None = None, incluir_questoes: bool = True) -> PacoteMaterial:
-        vistos: dict[str, SearchHit] = {}
+        candidates: dict[str, SearchHit] = {}
         tools = [
-            self._ferramenta(SearchMode.HIBRIDA, topico, vistos),
-            self._ferramenta(SearchMode.SEMANTICA, topico, vistos),
-            self._ferramenta(SearchMode.TEXTUAL, topico, vistos),
+            search_tool(SearchMode.HIBRIDA, topico, candidates, self._kb, self._k, self._min_score),
+            search_tool(SearchMode.SEMANTICA, topico, candidates, self._kb, self._k, self._min_score),
+            search_tool(SearchMode.TEXTUAL, topico, candidates, self._kb, self._k, self._min_score),
         ]
-        tarefa = (
+
+        prompt = (
             f"Pedido: {pedido}\nTópico: {topico.value if topico else 'qualquer'}\n"
             f"Selecione até {self._k} trechos de material"
             + (f" e até {self._k} questões de referência." if incluir_questoes else ".")
         )
+
         try:
-            selecao, _ = self._runner.run(SYSTEM, tarefa, tools, SelecaoConteudo)
-        except Exception:  # noqa: BLE001 - fallback: ranking puro da base
+            selecao = self._run_tool_agent(prompt, tools, SYSTEM, SelecaoConteudo, self._max_steps)
+        except AgentOutputError:
             selecao = SelecaoConteudo()
 
-        if not vistos:  # o modelo não chegou a buscar: consulta direta
+        # model didnt search, search manually
+        if not candidates:
             for hit in self._kb.search(pedido, SearchMode.HIBRIDA, k=2 * self._k, topico=topico):
                 if hit.score >= self._min_score:
-                    vistos[hit.document.id] = hit
+                    candidates[hit.document.id] = hit
 
         return PacoteMaterial(
             pedido=pedido,
-            trechos=self._montar(selecao.trechos, vistos, TipoDocumento.MATERIAL),
+            trechos=self._montar(selecao.trechos, candidates, TipoDocumento.MATERIAL),
             questoes_referencia=(
-                self._montar(selecao.questoes_referencia, vistos, TipoDocumento.QUESTAO) if incluir_questoes else []
+                self._montar(selecao.questoes_referencia, candidates, TipoDocumento.QUESTAO) if incluir_questoes else []
             ),
         )
 
-    def _ferramenta(self, modo: SearchMode, topico: Topico | None, vistos: dict[str, SearchHit]) -> Tool:
-        def buscar(args: _BuscaArgs) -> str:
-            hits = self._kb.search(args.consulta, modo, k=2 * self._k, tipo=args.tipo, topico=topico)
-            hits = [h for h in hits if h.score >= self._min_score]
-            if not hits:
-                return f"Nenhum resultado com score >= {self._min_score}."
-            linhas = []
-            for h in hits:
-                vistos.setdefault(h.document.id, h)
-                trecho = h.document.texto[:350].replace("\n", " ")
-                linhas.append(f"[{h.document.id}] tipo={h.document.tipo.value} score={h.score:.2f} :: {trecho}")
-            return "\n".join(linhas)
-
-        return Tool(
-            name=f"busca_{modo.value}",
-            description=f"Busca {modo.value} na base de conhecimento (material didático e questões).",
-            args_model=_BuscaArgs,
-            fn=buscar,
-        )
-
-    def _montar(self, ids: list[str], vistos: dict[str, SearchHit], tipo: TipoDocumento) -> list[TrechoRecuperado]:
-        do_tipo = {i: h for i, h in vistos.items() if h.document.tipo == tipo}
+    def _montar(self, ids: list[str], candidates: dict[str, SearchHit], tipo: TipoDocumento) -> list[TrechoRecuperado]:
+        do_tipo = {i: h for i, h in candidates.items() if h.document.tipo == tipo}
         escolhidos = [i for i in dict.fromkeys(ids) if i in do_tipo]  # descarta ids inventados
+
         if len(escolhidos) < self._k:  # completa com os melhores scores não escolhidos
             restantes = sorted((i for i in do_tipo if i not in escolhidos), key=lambda i: -do_tipo[i].score)
             escolhidos += restantes[: self._k - len(escolhidos)]
+
         return [
             TrechoRecuperado(
                 doc_id=i,
