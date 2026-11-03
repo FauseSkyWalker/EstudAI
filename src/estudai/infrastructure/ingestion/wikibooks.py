@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel
 
 from estudai.domain.curriculum import Topico
@@ -58,7 +59,7 @@ def baixar_paginas(
 
 
 def fatiar(pagina: PaginaWiki, max_chars: int = 1200, sobreposicao: int = 200) -> list[Trecho]:
-    """Divide por seção e, dentro de cada seção, em janelas de parágrafos com sobreposição."""
+    """Divide por seção e usa o splitter do LangChain para as janelas com sobreposição."""
     secoes: list[tuple[str, list[str]]] = [("Introdução", [])]
     for linha in pagina.texto.splitlines():
         if match := _SECAO.match(linha.strip()):
@@ -66,16 +67,18 @@ def fatiar(pagina: PaginaWiki, max_chars: int = 1200, sobreposicao: int = 200) -
         elif linha.strip():
             secoes[-1][1].append(linha.strip())
 
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=max_chars,
+        chunk_overlap=min(sobreposicao, max_chars - 1),
+        separators=["\n\n", "\n", " "],
+        keep_separator=False,
+    )
     trechos = []
     for secao, paragrafos in secoes:
-        janela = ""
-        for p in paragrafos:
-            if janela and len(janela) + len(p) > max_chars:
-                trechos.append((secao, janela))
-                janela = janela[-sobreposicao:]
-            janela = f"{janela}\n{p}".strip()
-        if len(janela) > 80:  # ignora seções vazias/triviais
-            trechos.append((secao, janela))
+        texto_secao = "\n".join(paragrafos).strip()
+        if len(texto_secao) <= 80:  # ignora seções vazias/triviais
+            continue
+        trechos += [(secao, chunk) for chunk in splitter.split_text(texto_secao)]
 
     slug = re.sub(r"\W+", "-", pagina.titulo.lower()).strip("-")
     return [
