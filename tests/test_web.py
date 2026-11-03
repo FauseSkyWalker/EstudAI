@@ -8,6 +8,7 @@ from test_orquestrador import montar
 
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
+from estudai.domain.notificacao import TipoNotificacao
 from estudai.domain.questoes import Exercicio
 from estudai.domain.tutoria import TurnoTutor
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
@@ -47,7 +48,9 @@ def test_ciclo_completo_pela_ponte(kb, banco, executor, tmp_path):
     fases_dos_itens = [e.fase for e in eventos if e.tipo == TipoEvento.ITEM]
     assert fases_dos_itens == [Fase.DIAGNOSTICO] * 4 + [Fase.PRATICA] * 3
     assert [e.tipo for e in eventos if e.fase == Fase.TUTORIA][:2] == [TipoEvento.TUTOR, TipoEvento.ALUNO]
-    assert any(e.tipo == TipoEvento.AVISO and e.conteudo.startswith("# ") for e in eventos)  # resumo
+    assert any(
+        e.tipo == TipoEvento.NOTIFICACAO and e.conteudo.tipo == TipoNotificacao.RESUMO for e in eventos
+    )  # resumo
 
 
 def test_encerrar_sessao_libera_a_thread(kb, banco, executor, tmp_path):

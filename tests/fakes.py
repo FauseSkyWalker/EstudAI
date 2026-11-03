@@ -14,6 +14,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import PrivateAttr, ValidationError
 
 from estudai.domain.correcao import RespostaAluno
+from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 
@@ -157,5 +158,5 @@ class ScriptedLearner:
             item_id=item_id, escolha=self._escolhas.get(item_id, self._padrao), resolucao="fiz a conta"
         )
 
-    def notify(self, mensagem: str) -> None:
-        self.notificacoes.append(mensagem)
+    def notify(self, notificacao: Notificacao) -> None:
+        self.notificacoes.append(notificacao.texto)
