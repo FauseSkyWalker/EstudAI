@@ -14,6 +14,7 @@ from enum import StrEnum
 
 import sympy
 from pydantic import BaseModel, Field
+from sympy.parsing.sympy_parser import parse_expr, standard_transformations
 
 from estudai.agents.base import AgentOutputError
 from estudai.agents.resolutor import Resolutor, VotoResolutor
@@ -21,9 +22,19 @@ from estudai.domain.questoes import Exercicio, ItemObjetivo
 from estudai.ports.tools import CodeExecutor
 
 _NUMERO = re.compile(r"[-+]?\d+(?:[.,]\d+)?(?:/\d+(?:[.,]\d+)?)?")
-_EXPRESSAO_SEGURA = re.compile(r"[0-9A-Za-z\s.+\-*/()]*")
-# sympify usa eval: só aceitamos estes identificadores (a saída vem de código gerado por LLM)
+_CARACTERES_SEGUROS = re.compile(r"[0-9A-Za-z\s.+\-*/()]*")
+# a expressão vem de código gerado por LLM: só estes identificadores podem ser avaliados
 _IDENTIFICADORES_PERMITIDOS = {"pi", "sqrt", "log", "ln", "exp", "E", "sin", "cos", "tan"}
+# `parse_expr` usa eval internamente; restringir o `global_dict` evita qualquer nome do Python.
+_GLOBALS = {
+    "__builtins__": {},
+    **{nome: getattr(sympy, nome) for nome in _IDENTIFICADORES_PERMITIDOS},
+    "Integer": sympy.Integer,
+    "Float": sympy.Float,
+    "Rational": sympy.Rational,
+    "Symbol": sympy.Symbol,
+    "Function": sympy.Function,
+}
 
 
 class StatusVerificacao(StrEnum):
@@ -49,13 +60,14 @@ class ResultadoValidacao(BaseModel):
 
 def _para_float(expr: str) -> float | None:
     texto = expr.strip().replace(",", ".").replace("^", "**").replace("π", "pi").replace("√", "sqrt")
-    if not _EXPRESSAO_SEGURA.fullmatch(texto) or len(texto) > 200:
+    if not _CARACTERES_SEGUROS.fullmatch(texto) or len(texto) > 200:
         return None
     if any(nome not in _IDENTIFICADORES_PERMITIDOS for nome in re.findall(r"[A-Za-z]+", texto)):
         return None
     try:
-        valor = complex(sympy.N(sympy.sympify(texto)))
-    except (sympy.SympifyError, TypeError, ValueError, SyntaxError):
+        expressao = parse_expr(texto, global_dict=_GLOBALS, transformations=standard_transformations)
+        valor = complex(sympy.N(expressao))
+    except (sympy.SympifyError, TypeError, ValueError, SyntaxError, AttributeError):
         return None
     return valor.real if abs(valor.imag) < 1e-12 else None
 

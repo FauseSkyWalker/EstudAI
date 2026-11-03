@@ -11,6 +11,11 @@ class RespostaAluno(BaseModel):
     resolucao: str = ""
 
 
+def acertou(resposta: RespostaAluno, gabarito: str) -> bool:
+    """Corretude objetiva: comparação determinística entre a escolha e o gabarito."""
+    return (resposta.escolha or "").strip().upper() == gabarito
+
+
 class ErroIdentificado(BaseModel):
     tipo: TipoErro
     conceito: str | None = None

@@ -11,6 +11,7 @@ diagnóstico nem atualização, e todos os agentes enxergam sempre o mesmo estad
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cached_property
 
 from pydantic import BaseModel
 
@@ -24,10 +25,11 @@ from estudai.application.mensageria import MessageLog
 from estudai.application.pratica import ExerciseProvider, ResultadoFornecimento
 from estudai.application.telemetria import UsageLedger, UsageSummary
 from estudai.application.validacao import ValidadorExercicios
-from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno
+from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
 from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.material import PacoteMaterial
 from estudai.domain.mensagens import Mensagem, Papel, TipoMensagem
+from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.perfil import Diagnostico, PerfilAluno, RegistroErro
 from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.questoes import Exercicio, OrigemItem, Particao
@@ -102,12 +104,17 @@ class Orquestrador:
     def config(self) -> ConfigSessao:
         return self._config
 
+    @cached_property
+    def _graph(self):
+        return build_cycle_graph(self)
+
     def executar_ciclo(self, aluno_id: str, topico: Topico, aluno: Learner) -> ResultadoCiclo:
         start = time.perf_counter()
         mark = self._ledger.mark()
         message_log = MessageLog()
-        graph = build_cycle_graph(self, aluno, message_log)
-        state: CycleState = graph.invoke({"student_id": aluno_id, "topic": topico})
+        state: CycleState = self._graph.invoke(
+            {"student_id": aluno_id, "topic": topico, "learner": aluno, "log": message_log}
+        )
 
         return ResultadoCiclo(
             aluno_id=aluno_id,
@@ -156,7 +163,7 @@ class Orquestrador:
                     item_id=questao.id,
                     conceitos=questao.conceitos,
                     dificuldade=questao.dificuldade,
-                    correta=_is_correct(resposta, questao.gabarito),
+                    correta=acertou(resposta, questao.gabarito),
                 )
             )
         if not evidencias:
@@ -210,7 +217,7 @@ class Orquestrador:
                 transcricao.conceitos_validados + turno.conceitos_validados
             )
             if concluido:
-                aluno.notify(turno.explicacao)
+                aluno.notify(Notificacao(tipo=TipoNotificacao.TUTORIA, texto=turno.explicacao))
                 transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno))
                 transcricao.encerramento = Encerramento.OBJETIVO_ATINGIDO
                 break
@@ -229,7 +236,7 @@ class Orquestrador:
         except AgentOutputError:
             return None
         log.send(Papel.RESUMO, Papel.ALUNO, TipoMensagem.RESUMO, resumo)
-        aluno.notify(_format_summary(resumo))
+        aluno.notify(Notificacao(tipo=TipoNotificacao.RESUMO, texto=_format_summary(resumo)))
         return resumo
 
     def _provide_exercises(
@@ -268,11 +275,18 @@ class Orquestrador:
                     removidos.append(item.id)
                     aviso = f"O exercício {item.id} foi removido: o gabarito não foi confirmado pelo painel."
                     log.send(Papel.ORQUESTRADOR, Papel.ALUNO, TipoMensagem.NOTIFICACAO, {"texto": aviso})
-                    aluno.notify(aviso)
+                    aluno.notify(Notificacao(tipo=TipoNotificacao.ITEM_REMOVIDO, texto=aviso, item_id=item.id))
                     continue
 
             log.send(Papel.CORRETOR, Papel.DIAGNOSTICADOR, TipoMensagem.CORRECAO, correcao)
-            aluno.notify(f"[{item.id}] {'Correta' if correcao.correta else 'Incorreta'}. {correcao.feedback}")
+            aluno.notify(
+                Notificacao(
+                    tipo=TipoNotificacao.FEEDBACK_EXERCICIO,
+                    texto=correcao.feedback,
+                    item_id=item.id,
+                    correta=correcao.correta,
+                )
+            )
             correcoes.append(correcao)
         return correcoes, removidos
 
@@ -280,7 +294,7 @@ class Orquestrador:
         try:
             return self._corretor.corrigir(item, resposta)
         except AgentOutputError:
-            correta = _is_correct(resposta, item.gabarito)
+            correta = acertou(resposta, item.gabarito)
             return Correcao(
                 item_id=item.id,
                 escolha=resposta.escolha,
@@ -350,12 +364,8 @@ class Orquestrador:
         except AgentOutputError:
             return None
         log.send(Papel.RESUMO, Papel.ALUNO, TipoMensagem.RESUMO, relatorio)
-        aluno.notify(relatorio.desempenho)
+        aluno.notify(Notificacao(tipo=TipoNotificacao.RELATORIO, texto=relatorio.desempenho))
         return relatorio
-
-
-def _is_correct(resposta: RespostaAluno, gabarito: str) -> bool:
-    return (resposta.escolha or "").strip().upper() == gabarito
 
 
 def _format_summary(resumo: ResumoEstudo) -> str:
