@@ -23,6 +23,7 @@ dependencies = [
     "langchain-openai>=1.7.3",
     # embeddings padrão (busca semântica do Agente de Conteúdo): necessário mesmo sem usar o Gemini para chat
     "google-genai>=1.0",
+    "langchain-text-splitters>=0.3",
 ]
 
 [project.optional-dependencies]
