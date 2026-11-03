@@ -6,6 +6,7 @@ message log stay outside the graph as dependencies.
 
 from typing import TypedDict
 
+from estudai.application.mensageria import MessageLog
 from estudai.application.pratica import ResultadoFornecimento
 from estudai.domain.correcao import Correcao, RelatorioPratica
 from estudai.domain.curriculum import Topico
@@ -13,11 +14,14 @@ from estudai.domain.material import PacoteMaterial
 from estudai.domain.perfil import Diagnostico, PerfilAluno
 from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.tutoria import ResumoEstudo, TranscricaoTutoria
+from estudai.ports.learner import Learner
 
 
 class CycleState(TypedDict, total=False):
     student_id: str
     topic: Topico
+    learner: Learner
+    log: MessageLog
     profile: PerfilAluno
     initial_version: int
     initial_diagnosis: Diagnostico | None

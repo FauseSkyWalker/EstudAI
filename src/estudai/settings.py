@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     # Limites de execução
     kb_k: int = 4
     kb_min_score: float = 0.2
-    kb_alpha: float = 0.5
     react_max_steps: int = 6
     max_perguntas_diagnostico: int = 6
     max_rodadas_tutoria: int = 6
@@ -72,10 +71,6 @@ class Settings(BaseSettings):
     @property
     def rotulos_cache_path(self) -> Path:
         return self.data_dir / "processed" / "rotulos_cache.jsonl"
-
-    @property
-    def embeddings_cache_path(self) -> Path:
-        return self.data_dir / "processed" / "embeddings_cache"
 
     @property
     def index_dir(self) -> Path:

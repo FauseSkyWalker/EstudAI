@@ -7,6 +7,10 @@ import numpy as np
 from scipy import stats
 
 
+def media(valores: Sequence[float]) -> float | None:
+    return float(np.mean(valores)) if len(valores) else None
+
+
 def wilcoxon_pareado(a: Sequence[float], b: Sequence[float]) -> dict[str, float]:
     diferencas = np.asarray(a, dtype=float) - np.asarray(b, dtype=float)
     resultado = {

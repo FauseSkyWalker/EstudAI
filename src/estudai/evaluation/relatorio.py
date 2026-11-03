@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 from pydantic import BaseModel
 
-from estudai.evaluation.estatistica import bootstrap_ic, fleiss_kappa, wilcoxon_pareado
+from estudai.evaluation.estatistica import bootstrap_ic, fleiss_kappa, media, wilcoxon_pareado
 from estudai.evaluation.experimento import Condicao, ResultadoExecucao
 
 
@@ -44,13 +44,9 @@ class Relatorio(BaseModel):
 _DIMENSOES = ("fidelidade_material", "personalizacao", "aplicabilidade", "profundidade_logica")
 
 
-def _media(valores: list[float]) -> float | None:
-    return float(np.mean(valores)) if valores else None
-
-
 def _rubrica_execucao(r: ResultadoExecucao) -> float | None:
     notas = [n.media for c in r.ciclos for n in c.notas_tutoria]
-    return _media(notas)
+    return media(notas)
 
 
 def resumir_condicao(condicao: Condicao, execucoes: list[ResultadoExecucao]) -> ResumoCondicao:
@@ -70,15 +66,15 @@ def resumir_condicao(condicao: Condicao, execucoes: list[ResultadoExecucao]) -> 
         falhas=sum(r.erro is not None for r in execucoes),
         ganho_medio=float(np.mean(ganhos)) if ganhos else 0.0,
         ganho_ic95=bootstrap_ic(ganhos),
-        rubrica_media=_media(rubricas),
+        rubrica_media=media(rubricas),
         rubrica_ic95=bootstrap_ic(rubricas) if rubricas else None,
         rubrica_por_dimensao={d: float(np.mean([getattr(n, d) for n in notas])) for d in _DIMENSOES} if notas else {},
         acuracia_diagnostico=(
-            _media([float(c.nivel_estimado == c.nivel_verdadeiro) for c in diagnosticados]) if diagnosticados else None
+            media([float(c.nivel_estimado == c.nivel_verdadeiro) for c in diagnosticados]) if diagnosticados else None
         ),
         taxa_descarte=(sum(c.itens_descartados for c in ciclos) / validados) if gerou and validados else None,
         validade_entregues=(1 - removidos / (entregues + removidos)) if gerou and entregues + removidos else None,
-        itens_com_defeito_critico=_media([float(a.defeito_critico) for a in avaliacoes]),
+        itens_com_defeito_critico=media([float(a.defeito_critico) for a in avaliacoes]),
         custo_medio_usd=float(np.mean([c.custo_usd for c in ciclos])) if ciclos else 0.0,
         latencia_media_s=float(np.mean([c.latencia_s for c in ciclos])) if ciclos else 0.0,
     )

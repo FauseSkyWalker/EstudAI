@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from estudai.domain.correcao import RespostaAluno
+from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 
@@ -28,5 +29,12 @@ class ConsoleLearner:
         resolucao = Prompt.ask("Resolução (opcional, ajuda o diagnóstico)", default="")
         return RespostaAluno(item_id=item_id, escolha=escolha.upper() or None, resolucao=resolucao)
 
-    def notify(self, mensagem: str) -> None:
-        self._console.print(Panel(Markdown(mensagem), style="green"))
+    def notify(self, notificacao: Notificacao) -> None:
+        if notificacao.tipo == TipoNotificacao.FEEDBACK_EXERCICIO:
+            status = "Correta" if notificacao.correta else "Incorreta"
+            titulo = f"{notificacao.item_id} · {status}"
+            estilo = "green" if notificacao.correta else "red"
+        else:
+            titulo = notificacao.tipo.value
+            estilo = "yellow" if notificacao.tipo in (TipoNotificacao.ITEM_REMOVIDO, TipoNotificacao.AVISO) else "green"
+        self._console.print(Panel(Markdown(notificacao.texto), title=titulo, style=estilo))

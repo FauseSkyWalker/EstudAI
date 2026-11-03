@@ -22,6 +22,7 @@ from estudai.domain.perfil import NivelDominio
 from estudai.domain.questoes import Particao
 from estudai.domain.tutoria import TranscricaoTutoria
 from estudai.evaluation.aluno_simulado import AlunoSimulado
+from estudai.evaluation.estatistica import media
 from estudai.evaluation.juizes import AvaliacaoItem, JuizItem, JuizTransicao, JuizTutoria, NotasTutoria
 from estudai.evaluation.personas import Persona
 from estudai.ports.knowledge import QuestionBank
@@ -158,7 +159,7 @@ class Experimento:
             persona_id=persona.id,
             topico=topico,
             seed=self._seed,
-            pre_teste=_media(aluno.responder_bateria(bateria)),
+            pre_teste=media(aluno.responder_bateria(bateria)) or 0.0,
             pos_teste=0.0,
         )
         try:
@@ -170,7 +171,7 @@ class Experimento:
                 resultado.ciclos.append(self._registrar(ciclo, nivel_verdadeiro, saida, aluno, latencia))
         except Exception as exc:  # noqa: BLE001 - registra a falha e segue o experimento
             resultado.erro = f"{type(exc).__name__}: {exc}"
-        resultado.pos_teste = _media(aluno.responder_bateria(bateria))
+        resultado.pos_teste = media(aluno.responder_bateria(bateria)) or 0.0
         return resultado
 
     def _registrar(
@@ -234,10 +235,6 @@ def _tentar_todos(fn, juizes: list) -> list:
         with contextlib.suppress(AgentOutputError):  # juiz que falha não vota
             resultados.append(fn(juiz))
     return resultados
-
-
-def _media(acertos: list[bool]) -> float:
-    return sum(acertos) / len(acertos) if acertos else 0.0
 
 
 def _anexar(caminho: Path, resultado: ResultadoExecucao) -> None:

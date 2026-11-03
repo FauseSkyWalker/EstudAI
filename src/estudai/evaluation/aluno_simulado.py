@@ -9,7 +9,6 @@
 """
 
 import contextlib
-import hashlib
 import random
 import time
 
@@ -20,6 +19,7 @@ from estudai.agents.base import Agent, AgentOutputError, to_json
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
+from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 from estudai.evaluation.personas import Persona
@@ -68,8 +68,7 @@ class AlunoSimulado(Agent):
     # --- respostas objetivas (sem LLM) ----------------------------------------------------
 
     def _rng(self, item_id: str) -> random.Random:
-        chave = f"{self.persona.id}|{item_id}|{self._seed}".encode()
-        return random.Random(int.from_bytes(hashlib.sha256(chave).digest()[:8], "big"))
+        return random.Random(f"{self.persona.id}|{item_id}|{self._seed}")
 
     def p_acerto(self, conceitos: list[str]) -> float:
         p = self.persona
@@ -111,8 +110,8 @@ class AlunoSimulado(Agent):
         self._dialogo.append(f"ALUNO: {texto}")
         return texto
 
-    def notify(self, mensagem: str) -> None:
-        self.notificacoes.append(mensagem)
+    def notify(self, notificacao: Notificacao) -> None:
+        self.notificacoes.append(notificacao.texto)
 
     def _falar(self, prompt: str, schema):
         inicio = time.perf_counter()

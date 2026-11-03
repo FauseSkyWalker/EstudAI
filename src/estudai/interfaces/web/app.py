@@ -4,13 +4,12 @@ Rode com `uv run estudai web` (ou `uv run streamlit run src/estudai/interfaces/w
 O ciclo roda numa thread (`SessaoWeb`); esta tela só desenha o estado e entrega as respostas.
 """
 
-import re
-
 import streamlit as st
 
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
+from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.tutoria import TurnoTutor
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
@@ -22,7 +21,6 @@ TOPICOS = {
     Topico.DINAMICA: "Dinâmica",
 }
 FASES = {Fase.DIAGNOSTICO: "🔎 Diagnóstico", Fase.TUTORIA: "🧑‍🏫 Tutoria", Fase.PRATICA: "📝 Prática"}
-_FEEDBACK = re.compile(r"^\[(?P<id>[^\]]+)\] (?P<status>Correta|Incorreta)\.\s*(?P<texto>.*)", re.DOTALL)
 
 
 @st.cache_resource
@@ -113,17 +111,30 @@ def desenhar_evento(evento: Evento) -> None:
         item_id, item, resposta = evento.conteudo
         with st.expander(f"Questão {item_id} · você marcou **{resposta.escolha or 'em branco'}**"):
             st.markdown(item.formatar())
-    elif feedback := _FEEDBACK.match(evento.conteudo):
-        caixa = st.success if feedback["status"] == "Correta" else st.error
-        caixa(f"**{feedback['status']}** ({feedback['id']}). {feedback['texto']}")
-    elif evento.conteudo.startswith("# "):  # resumo de revisão
-        with st.container(border=True):
-            st.markdown(evento.conteudo.replace("# ", "#### 📘 ", 1))
-    elif evento.fase == Fase.TUTORIA:  # fechamento do tutor
-        with st.chat_message("assistant", avatar="🧑‍🏫"):
-            st.markdown(evento.conteudo)
+    elif evento.tipo == TipoEvento.NOTIFICACAO:
+        _desenhar_notificacao(evento.conteudo)
     else:
-        st.info(evento.conteudo)
+        st.info(str(evento.conteudo))
+
+
+def _desenhar_notificacao(notificacao: Notificacao) -> None:
+    if notificacao.tipo == TipoNotificacao.FEEDBACK_EXERCICIO:
+        caixa = st.success if notificacao.correta else st.error
+        status = "Correta" if notificacao.correta else "Incorreta"
+        caixa(f"**{status}** ({notificacao.item_id}). {notificacao.texto}")
+    elif notificacao.tipo == TipoNotificacao.RESUMO:
+        with st.container(border=True):
+            st.markdown(notificacao.texto.replace("# ", "#### 📘 ", 1))
+    elif notificacao.tipo == TipoNotificacao.RELATORIO:
+        with st.container(border=True):
+            st.markdown(f"#### 📊 Relatório\n{notificacao.texto}")
+    elif notificacao.tipo == TipoNotificacao.ITEM_REMOVIDO:
+        st.warning(notificacao.texto)
+    elif notificacao.tipo == TipoNotificacao.TUTORIA:  # fechamento do tutor
+        with st.chat_message("assistant", avatar="🧑‍🏫"):
+            st.markdown(notificacao.texto)
+    else:
+        st.info(notificacao.texto)
 
 
 def historico(sessao: SessaoWeb) -> Fase | None:

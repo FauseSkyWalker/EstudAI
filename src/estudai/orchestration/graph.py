@@ -14,19 +14,17 @@ from estudai.domain.planejamento import ObjetivoSessao
 from estudai.orchestration.state import CycleState
 
 if TYPE_CHECKING:
-    from estudai.application.mensageria import MessageLog
     from estudai.application.orquestrador import Orquestrador
-    from estudai.ports.learner import Learner
 
 
-def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log: MessageLog) -> Any:
+def build_cycle_graph(orchestrator: Orquestrador) -> Any:
     def load_profile(state: CycleState) -> dict[str, Any]:
         profile = orchestrator._load_profile(state["student_id"])
         return {"profile": profile, "initial_version": profile.versao}
 
     def diagnose(state: CycleState) -> dict[str, Any]:
         profile, diagnosis, probe_ids = orchestrator._run_initial_diagnosis(
-            state["profile"], state["topic"], learner, message_log
+            state["profile"], state["topic"], state["learner"], state["log"]
         )
         return {
             "profile": profile,
@@ -46,7 +44,7 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
         material = orchestrator._retrieve_material(
             state["profile"],
             state["objective"],
-            message_log,
+            state["log"],
         )
         return {"material": material}
 
@@ -55,8 +53,8 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
             state["profile"],
             state["objective"],
             state["material"],
-            learner,
-            message_log,
+            state["learner"],
+            state["log"],
         )
         return {"transcript": transcript}
 
@@ -64,8 +62,8 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
         summary = orchestrator._summarize_tutoring(
             state["transcript"],
             state["material"],
-            learner,
-            message_log,
+            state["learner"],
+            state["log"],
         )
         return {"summary": summary}
 
@@ -74,15 +72,15 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
             state["profile"],
             state["topic"],
             frozenset(state.get("probe_ids", [])),
-            message_log,
+            state["log"],
         )
         return {"provision": provision}
 
     def practice(state: CycleState) -> dict[str, Any]:
         corrections, removed_ids = orchestrator._run_practice(
             state["provision"].exercicios,
-            learner,
-            message_log,
+            state["learner"],
+            state["log"],
         )
         return {
             "corrections": corrections,
@@ -96,7 +94,7 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
             state["topic"],
             state["provision"],
             state["corrections"],
-            message_log,
+            state["log"],
         )
         return {"profile": profile, "final_diagnosis": diagnosis}
 
@@ -107,8 +105,8 @@ def build_cycle_graph(orchestrator: Orquestrador, learner: Learner, message_log:
             state["profile"],
             state["topic"],
             state["corrections"],
-            learner,
-            message_log,
+            state["learner"],
+            state["log"],
         )
         return {"report": report}
 

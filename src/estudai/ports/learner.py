@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from estudai.domain.correcao import RespostaAluno
+from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 
@@ -16,4 +17,4 @@ class Learner(Protocol):
 
     def solve(self, item_id: str, item: ItemObjetivo) -> RespostaAluno: ...
 
-    def notify(self, mensagem: str) -> None: ...
+    def notify(self, notificacao: Notificacao) -> None: ...

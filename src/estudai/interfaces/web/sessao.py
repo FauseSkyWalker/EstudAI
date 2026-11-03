@@ -16,6 +16,7 @@ from typing import Any
 from estudai.application.orquestrador import Orquestrador, ResultadoCiclo
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
+from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo, Questao
 from estudai.domain.tutoria import TurnoTutor
 
@@ -30,7 +31,7 @@ class TipoEvento(StrEnum):
     TUTOR = "tutor"  # turno do Tutor (TurnoTutor)
     ALUNO = "aluno"  # resposta do aluno ao Tutor (str)
     ITEM = "item"  # questão respondida: (item_id, ItemObjetivo, RespostaAluno)
-    AVISO = "aviso"  # notificação do sistema (str): resumo, feedback, relatório...
+    NOTIFICACAO = "notificacao"  # notificação tipada do sistema (Notificacao)
 
 
 @dataclass(frozen=True)
@@ -83,8 +84,8 @@ class WebLearner:
         self._registrar(TipoEvento.ITEM, (item_id, item, resposta))
         return resposta
 
-    def notify(self, mensagem: str) -> None:
-        self._registrar(TipoEvento.AVISO, mensagem)
+    def notify(self, notificacao: Notificacao) -> None:
+        self._registrar(TipoEvento.NOTIFICACAO, notificacao)
 
     # --- lado da interface ---------------------------------------------------------------
 
