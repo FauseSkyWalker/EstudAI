@@ -119,7 +119,7 @@ def montar(
             PainelResolutores([Resolutor(painel_llm) for _ in range(3)]), VerificadorSimbolico(executor)
         )
 
-    conteudo = AgenteConteudo(llm, kb, min_score=0.01)
+    conteudo = AgenteConteudo(llm, kb)
     fornecedor = (
         BankExerciseProvider(banco)
         if fonte == "banco"

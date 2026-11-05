@@ -169,7 +169,7 @@ class Container:
     @cached_property
     def conteudo(self) -> AgenteConteudo:
         s = self.settings
-        return AgenteConteudo(self.economico(Papel.CONTEUDO), self.kb, k=s.kb_k, min_score=s.kb_min_score)
+        return AgenteConteudo(self.economico(Papel.CONTEUDO), self.kb, k=s.kb_k)
 
     @cached_property
     def validador(self) -> ValidadorExercicios:

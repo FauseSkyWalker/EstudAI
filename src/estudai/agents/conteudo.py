@@ -41,19 +41,17 @@ class AgenteConteudo(Agent):
         *,
         usage_cb: BaseCallbackHandler | None = None,
         k: int = 4,
-        min_score: float = 0.65,
         max_steps: int = 4,
         **kw,
     ) -> None:
         super().__init__(model, usage_cb, **kw)
         self._kb = kb
         self._k = k
-        self._min_score = min_score
         self._max_steps = max_steps
         self._tools = [
-            search_tool(SearchMode.HIBRIDA, kb, k, min_score),
-            search_tool(SearchMode.SEMANTICA, kb, k, min_score),
-            search_tool(SearchMode.TEXTUAL, kb, k, None),
+            search_tool(SearchMode.HIBRIDA, kb, k),
+            search_tool(SearchMode.SEMANTICA, kb, k),
+            search_tool(SearchMode.TEXTUAL, kb, k),
         ]
 
     def buscar(self, pedido: str, topico: Topico | None = None, incluir_questoes: bool = True) -> PacoteMaterial:
@@ -80,8 +78,7 @@ class AgenteConteudo(Agent):
         # model didnt search, search manually
         if not candidates:
             for hit in self._kb.search(pedido, SearchMode.HIBRIDA, k=2 * self._k, topico=topico):
-                if hit.score >= self._min_score:
-                    candidates[hit.document.id] = hit
+                candidates[hit.document.id] = hit
 
         return PacoteMaterial(
             pedido=pedido,

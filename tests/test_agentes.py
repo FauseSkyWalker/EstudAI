@@ -152,7 +152,7 @@ def test_conteudo_usa_ferramenta_e_descarta_ids_inventados(kb, monkeypatch):
         return busca_original(*args, **kwargs)
 
     monkeypatch.setattr(kb, "search", search)
-    agente = AgenteConteudo(FakeChatModel({"conteudo": passos}), kb, k=2, min_score=0.01)
+    agente = AgenteConteudo(FakeChatModel({"conteudo": passos}), kb, k=2)
     pacote = agente.buscar("ensinar função quadrática", Topico.FUNCOES)
 
     # a ferramenta de busca foi executada, não o fallback direto
