@@ -24,6 +24,7 @@ dependencies = [
     # embeddings padrão (busca semântica do Agente de Conteúdo): necessário mesmo sem usar o Gemini para chat
     "google-genai>=1.0",
     "langchain-text-splitters>=0.3",
+    "mathml-to-latex>=1.0.0",
 ]
 
 [project.optional-dependencies]

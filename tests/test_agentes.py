@@ -135,6 +135,25 @@ def test_gerador_usa_ferramentas_e_entrega_rascunho():
     assert item.codigo_verificacao == "print(2**2 + 1)"
 
 
+def test_gerador_normaliza_delimitadores_de_latex():
+    from estudai.agents.gerador import GeradorExercicios, RascunhoExercicio
+
+    rascunho = RascunhoExercicio(
+        enunciado=r"Seja $x^2$ e R$ 10, calcule \[y\].",
+        alternativas=["$1$", "$2$", "$3$", "$4$", "$5$"],
+        gabarito="A",
+        resolucao=r"\(x^2\)",
+    )
+    plano = ItemPlanejado(conceito="funcao_quadratica", dificuldade=Dificuldade.MEDIA)
+
+    item = GeradorExercicios._montar(rascunho, Topico.FUNCOES, plano)
+
+    assert r"\(x^2\)" in item.enunciado
+    assert "R$ 10" in item.enunciado  # cifra não vira matemática
+    assert r"\(y\)" in item.enunciado
+    assert item.alternativas[0] == r"\(1\)"
+
+
 def test_conteudo_usa_ferramenta_e_descarta_ids_inventados(kb, monkeypatch):
     passos = [
         tool_call("busca_hibrida", {"consulta": "vértice da parábola função quadrática"}, "call-search"),

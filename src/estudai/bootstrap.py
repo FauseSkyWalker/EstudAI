@@ -128,6 +128,13 @@ class Container:
     def economico(self, papel: Papel) -> BaseChatModel:
         return self.chat(self.settings.economic, papel)
 
+    def classificador(self) -> BaseChatModel:
+        """function calling é problemático com saída em LaTeX, logo usamos json_mode
+        para classificação/normalização da base inicial
+        """
+        config = self.settings.economic.model_copy(update={"structured_output_method": "json_mode"})
+        return self.chat(config, Papel.CLASSIFICADOR)
+
     # --- dados e ferramentas -------------------------------------------------------------
 
     @cached_property

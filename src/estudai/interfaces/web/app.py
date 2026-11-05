@@ -11,6 +11,7 @@ from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.tutoria import TurnoTutor
+from estudai.interfaces.web.markdown import markdown_latex
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
 
@@ -110,7 +111,7 @@ def desenhar_evento(evento: Evento) -> None:
     elif evento.tipo == TipoEvento.ITEM:
         item_id, item, resposta = evento.conteudo
         with st.expander(f"Questão {item_id} · você marcou **{resposta.escolha or 'em branco'}**"):
-            st.markdown(item.formatar())
+            st.markdown(markdown_latex(item.formatar()))
     elif evento.tipo == TipoEvento.NOTIFICACAO:
         _desenhar_notificacao(evento.conteudo)
     else:
@@ -160,12 +161,12 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
         st.subheader(FASES[pedido.fase])
     with st.form(key=f"item-{pedido.item_id}", border=True):
         st.markdown(f"**Questão {pedido.item_id}**")
-        st.markdown(item.enunciado)
+        st.markdown(markdown_latex(item.enunciado))
         escolha = st.radio(
             "Alternativas",
             item.letras,
             index=None,
-            format_func=lambda letra: f"{letra}) {item.alternativa(letra)}",
+            format_func=lambda letra: markdown_latex(f"{letra}) {item.alternativa(letra)}"),
         )
         resolucao = st.text_area("Como você resolveu? (opcional — ajuda o diagnóstico)")
         if st.form_submit_button("Enviar resposta", type="primary"):

@@ -72,7 +72,7 @@ def ingest_questions(
 
     questoes, stats = ingerir_questoes(
         brutas,
-        ClassificadorQuestoes(container.economico(Papel.CLASSIFICADOR)),
+        ClassificadorQuestoes(container.classificador()),
         RotuloCache(s.rotulos_cache_path),
         bateria_por_topico=bateria,
         workers=workers,

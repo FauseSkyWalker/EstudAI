@@ -173,3 +173,5 @@ do LanceDB (sem embeddings) e o executor de sandbox real.
   apenas do consenso do painel (com limiar de unanimidade, configurável).
 - A base de conhecimento funciona só com BM25 quando não recebe um embedder; nesse caso os
   modos semântico e híbrido caem para a busca textual.
+- O banco guarda fórmulas em LaTeX (`\(...\)`). A interface web renderiza via Streamlit/KaTeX;
+  no terminal (Rich) os delimitadores aparecem como texto.

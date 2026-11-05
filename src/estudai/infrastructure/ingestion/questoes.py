@@ -21,6 +21,7 @@ from estudai.agents.base import AgentOutputError
 from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.questoes import Particao, Questao
 from estudai.infrastructure.ingestion.classificador import ClassificadorQuestoes, Rotulo
+from estudai.infrastructure.ingestion.normalizacao import texto_invalido
 from estudai.infrastructure.ingestion.sources import QuestaoBruta
 from estudai.infrastructure.llm.claude_cli import ClaudeCLIError
 
@@ -50,6 +51,14 @@ def _para_questao(bruta: QuestaoBruta, rotulo: Rotulo) -> Questao | None:
     topico = Topico(rotulo.topico)
     if topico.disciplina != Disciplina(rotulo.disciplina):
         return None  # rótulo incoerente
+
+    enunciado = rotulo.enunciado or bruta.enunciado
+    alternativas = rotulo.alternativas or bruta.alternativas
+    if len(alternativas) != len(bruta.alternativas) or texto_invalido(enunciado) or any(
+        texto_invalido(a) for a in alternativas
+    ):
+        enunciado, alternativas = bruta.enunciado, bruta.alternativas  # normalização suspeita: usa a fonte
+
     try:
         return Questao(
             id=bruta.id,
@@ -59,8 +68,8 @@ def _para_questao(bruta: QuestaoBruta, rotulo: Rotulo) -> Questao | None:
             topico=topico,
             conceitos=rotulo.conceitos,
             dificuldade=rotulo.dificuldade,
-            enunciado=bruta.enunciado,
-            alternativas=bruta.alternativas,
+            enunciado=enunciado,
+            alternativas=alternativas,
             gabarito=bruta.gabarito,
             descricoes_imagens=bruta.descricoes_imagens,
         )
@@ -108,7 +117,9 @@ def ingerir_questoes(
     elegiveis = []
     for b in brutas:
         stats["lidas"] += 1
-        if b.depende_imagem_sem_descricao:
+        if b.texto_invalido:
+            stats["descartadas_formato"] += 1
+        elif b.depende_imagem_sem_descricao:
             stats["descartadas_imagem"] += 1
         else:
             elegiveis.append(b)

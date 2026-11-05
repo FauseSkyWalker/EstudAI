@@ -1,8 +1,9 @@
-"""Leitores das bases públicas de questões (Tabela 1), normalizados para `QuestaoBruta`.
+"""Leitores das bases públicas de questões, normalizados para `QuestaoBruta`.
 
-- BLUEX (Comvest/Fuvest): tem rótulo de disciplina e legendas de imagens (BLUEX Revisited).
-- ENEM Challenge 2009–2017: sem rótulo de disciplina (classificação via LLM).
-- ENEM 2022–2024 (maritaca-ai/enem): figuras como `[[placeholder]]` + descrições textuais.
+- BLUEX (Comvest/Fuvest): possui rótulo de disciplina e legendas de imagens (BLUEX Revisited).
+- ENEM Challenge 2009-2017: não possui rótulo de disciplina (classificação via LLM).
+- ENEM 2022-2024 (maritaca-ai/enem): Sem rótulo direto de disciplina,
+imagens com `[[placeholder]]` + descrições textuais
 """
 
 import re
@@ -11,6 +12,7 @@ from collections.abc import Iterator
 from pydantic import BaseModel, Field
 
 from estudai.domain.curriculum import Disciplina
+from estudai.infrastructure.ingestion.normalizacao import limpar_texto, referencia_figura, texto_invalido
 
 PLACEHOLDER = "[[placeholder]]"
 _PREFIXO_ALTERNATIVA = re.compile(r"^\s*\(?[a-eA-E]\)\s*")
@@ -27,6 +29,7 @@ class QuestaoBruta(BaseModel):
     disciplina_indicada: Disciplina | None = None  # metadado da base, quando existe
     descricoes_imagens: list[str] = Field(default_factory=list)
     depende_imagem_sem_descricao: bool = False
+    texto_invalido: bool = False  # sobrou marcação/placeholder ou o MathML não converteu
 
 
 def _load(nome: str, **kw):
@@ -49,21 +52,24 @@ def carregar_bluex() -> Iterator[QuestaoBruta]:
         if indicada is None or row["alternatives_type"] != "string" or not row["answer"]:
             continue
 
-        enunciado, legendas = _substituir_imagens_bluex(
-            row["question"], list(row.get("context_captions") or []), list(row.get("blind_captions") or [])
-        )
+        contexto = list(row.get("context_captions") or [])
+        cegas = list(row.get("blind_captions") or [])
+        enunciado, legendas = _substituir_imagens_bluex(row["question"], contexto, cegas)
+        enunciado = limpar_texto(enunciado)
+        alternativas = [limpar_texto(_PREFIXO_ALTERNATIVA.sub("", a).strip()) for a in row["alternatives"]]
         yield QuestaoBruta(
             id=f"BLUEX#{row['id']}",
             fonte="bluex",
             ano=_ano(row["id"]),
             enunciado=enunciado,
-            alternativas=[_PREFIXO_ALTERNATIVA.sub("", a).strip() for a in row["alternatives"]],
+            alternativas=alternativas,
             gabarito=row["answer"],
             disciplina_indicada=indicada,
             descricoes_imagens=legendas,
             # sobrou marcador sem legenda, ou há imagem sem nenhum marcador/legenda
             depende_imagem_sem_descricao=bool(_MARCADOR_IMAGEM.search(enunciado))
             or (bool(row["has_associated_images"]) and not legendas),
+            texto_invalido=texto_invalido(enunciado) or any(texto_invalido(a) for a in alternativas),
         )
 
 
@@ -88,13 +94,18 @@ def carregar_enem_challenge() -> Iterator[QuestaoBruta]:
         if row["nullified"] or int(row["exam_year"]) >= 2022:
             continue
 
+        enunciado = limpar_texto(row["question"])
+        alternativas = [limpar_texto(a) for a in row["choices"]["text"]]
         yield QuestaoBruta(
             id=f"ENEMC#{row['id']}",
             fonte="enem_challenge",
             ano=_ano(str(row["exam_year"])),
-            enunciado=row["question"],
-            alternativas=list(row["choices"]["text"]),
+            enunciado=enunciado,
+            alternativas=alternativas,
             gabarito=row["answerKey"],
+            # a base não tem imagens: perguntas que dependem de figura são insolúveis
+            depende_imagem_sem_descricao=referencia_figura(enunciado),
+            texto_invalido=texto_invalido(enunciado) or any(texto_invalido(a) for a in alternativas),
         )
 
 
@@ -109,6 +120,8 @@ def carregar_enem_2022_2024() -> Iterator[QuestaoBruta]:
             enunciado = row["question"]
             for desc in descricoes:
                 enunciado = enunciado.replace(PLACEHOLDER, f"[Figura: {desc}]", 1)
+            enunciado = limpar_texto(enunciado)
+            alternativas = [limpar_texto(a) for a in alternativas]
 
             yield QuestaoBruta(
                 id=f"ENEM{ano}#{row['id']}",
@@ -119,6 +132,7 @@ def carregar_enem_2022_2024() -> Iterator[QuestaoBruta]:
                 gabarito=row["label"],
                 descricoes_imagens=descricoes,
                 depende_imagem_sem_descricao=PLACEHOLDER in enunciado,
+                texto_invalido=texto_invalido(enunciado) or any(texto_invalido(a) for a in alternativas),
             )
 
 
