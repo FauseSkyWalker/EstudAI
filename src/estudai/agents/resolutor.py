@@ -3,12 +3,16 @@
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import Agent
+from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.mensagens import Papel
 from estudai.domain.questoes import ItemObjetivo
 
-SYSTEM = """Você é um resolutor independente de questões objetivas de Matemática e Física de
+SYSTEM = (
+    """Você é um resolutor independente de questões objetivas de Matemática e Física de
 vestibulares brasileiros. Resolva com cuidado, passo a passo, e escolha UMA alternativa.
 Sinalize se mais de uma alternativa estiver correta ou se o enunciado for ambíguo/insolúvel."""
+    + ESPECIFICACAO_LATEX
+)
 
 
 class VotoResolutor(BaseModel):
@@ -24,4 +28,6 @@ class Resolutor(Agent):
     def resolver(self, item: ItemObjetivo) -> VotoResolutor:
         enunciado_sem_gabarito = item.formatar(com_gabarito=False)
         voto = self._ask(SYSTEM, enunciado_sem_gabarito, VotoResolutor)
-        return voto.model_copy(update={"resposta": voto.resposta.strip().upper()[:1]})
+        return voto.model_copy(
+            update={"raciocinio": para_inline(voto.raciocinio), "resposta": voto.resposta.strip().upper()[:1]}
+        )

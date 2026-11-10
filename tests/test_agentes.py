@@ -8,13 +8,17 @@ from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
 from estudai.agents.diagnosticador import Diagnosticador, Evidencia
 from estudai.agents.gerador import GeradorExercicios
+from estudai.agents.resolutor import Resolutor
+from estudai.agents.resumo import AgenteResumo
+from estudai.agents.tutor import Tutor
 from estudai.domain.correcao import RespostaAluno
-from estudai.domain.curriculum import Topico
+from estudai.domain.curriculum import Disciplina, Topico
 from estudai.domain.material import PacoteMaterial, TipoDocumento, TrechoRecuperado
 from estudai.domain.mensagens import Papel
 from estudai.domain.perfil import NivelDominio, PerfilAluno
-from estudai.domain.planejamento import ItemPlanejado
+from estudai.domain.planejamento import ItemPlanejado, ObjetivoSessao
 from estudai.domain.questoes import Dificuldade, Exercicio, OrigemItem
+from estudai.domain.tutoria import TranscricaoTutoria
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.ports.knowledge import SearchMode
 from estudai.ports.tools import ExecutionResult
@@ -258,3 +262,103 @@ def test_rascunho_incoerente_vira_falha_do_agente_e_nao_derruba_o_ciclo(monkeypa
     plano = planejar_pratica(PerfilAluno.novo("x"), Topico.FUNCOES, 1)[0]
     with pytest.raises(AgentOutputError, match="rascunho inválido"):
         gerador.gerar({}, Topico.FUNCOES, plano, [])
+
+
+def test_tutor_normaliza_latex_nas_saidas():
+    llm = FakeChatModel(
+        {
+            ("tutor", "TurnoTutor"): [
+                {
+                    "avaliacao_resposta_anterior": r"Você usou $x^2$.",
+                    "conceito_alvo": "funcao_quadratica",
+                    "explicacao": r"O vértice é $x_v = -\frac{b}{2a}$.",
+                    "pergunta_verificacao": r"Quanto vale $f(1)$?",
+                }
+            ]
+        }
+    )
+    objetivo = ObjetivoSessao(
+        topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
+    )
+    turno = Tutor(llm, Disciplina.MATEMATICA).proximo_turno(
+        {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
+    )
+
+    assert turno.avaliacao_resposta_anterior == r"Você usou \(x^2\)."
+    assert turno.explicacao == r"O vértice é \(x_v = -\frac{b}{2a}\)."
+    assert turno.pergunta_verificacao == r"Quanto vale \(f(1)\)?"
+
+
+def test_corretor_normaliza_latex_no_feedback_e_nos_erros():
+    llm = FakeChatModel(
+        {
+            ("corretor", "AnaliseCorrecao"): [
+                {
+                    "nota": 0.3,
+                    "feedback": r"Reveja $x^2$.",
+                    "erros": [
+                        {"tipo": "numerico", "conceito": "funcao_quadratica", "descricao": r"trocou $a$ por $b$"}
+                    ],
+                }
+            ]
+        }
+    )
+    item = Exercicio(id="e1", topico=Topico.FUNCOES, enunciado="?", alternativas=list("abcde"), gabarito="C")
+
+    correcao = Corretor(llm).corrigir(item, RespostaAluno(item_id="e1", escolha="A"))
+
+    assert correcao.feedback == r"Reveja \(x^2\)."
+    assert correcao.erros[0].descricao == r"trocou \(a\) por \(b\)"
+
+
+def test_resolutor_normaliza_latex_no_raciocinio():
+    llm = FakeChatModel(
+        {("painel_resolutores", "VotoResolutor"): [{"raciocinio": r"Como $x^2 = 4$, $x = 2$.", "resposta": "b"}]}
+    )
+    item = Exercicio(id="e1", topico=Topico.FUNCOES, enunciado="?", alternativas=list("abcde"), gabarito="B")
+
+    voto = Resolutor(llm).resolver(item)
+
+    assert voto.raciocinio == r"Como \(x^2 = 4\), \(x = 2\)."
+    assert voto.resposta == "B"
+
+
+def test_resumo_normaliza_latex_nos_campos():
+    llm = FakeChatModel(
+        {
+            ("resumo", "ResumoEstudo"): [
+                {
+                    "titulo": "Função $f(x)$",
+                    "pontos_chave": [r"vértice $x_v = -b/2a$"],
+                    "formulas": [r"$x = \frac{-b}{2a}$"],
+                    "erros_comuns": [r"esquecer $a \ne 0$"],
+                    "proximos_passos": [r"praticar $f(1)$"],
+                }
+            ],
+            ("resumo", "RelatorioPratica"): [
+                {
+                    "desempenho": r"Você acertou $70\%$.",
+                    "pontos_fortes": [r"domina $x^2$"],
+                    "pontos_a_melhorar": [r"rever $a$"],
+                    "recomendacoes": [r"treine $f(2)$"],
+                }
+            ],
+        }
+    )
+    objetivo = ObjetivoSessao(
+        topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
+    )
+    agente = AgenteResumo(llm)
+
+    resumo = agente.resumir_tutoria(TranscricaoTutoria(objetivo=objetivo), PacoteMaterial(pedido="função quadrática"))
+    relatorio = agente.resumir_pratica([], {}, {})
+
+    assert resumo.titulo == r"Função \(f(x)\)"
+    assert resumo.pontos_chave == [r"vértice \(x_v = -b/2a\)"]
+    assert resumo.formulas == [r"\(x = \frac{-b}{2a}\)"]
+    assert resumo.erros_comuns == [r"esquecer \(a \ne 0\)"]
+    assert resumo.proximos_passos == [r"praticar \(f(1)\)"]
+    assert relatorio.desempenho == r"Você acertou \(70\%\)."
+    assert relatorio.pontos_fortes == [r"domina \(x^2\)"]
+    assert relatorio.pontos_a_melhorar == [r"rever \(a\)"]
+    assert relatorio.recomendacoes == [r"treine \(f(2)\)"]

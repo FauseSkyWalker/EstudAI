@@ -17,13 +17,14 @@ from estudai.agents.base import Agent, AgentOutputError, to_json
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.tools import call_conteudo_agent_tool, python_tool
 from estudai.domain.curriculum import Topico
-from estudai.domain.latex import para_inline
+from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.mensagens import Papel
 from estudai.domain.planejamento import ItemPlanejado
 from estudai.domain.questoes import LETRAS, Exercicio, OrigemItem
 from estudai.ports.tools import CodeExecutor
 
-SYSTEM = r"""Você é o Agente Gerador de Exercícios de um sistema de tutoria para vestibulares
+SYSTEM = (
+    r"""Você é o Agente Gerador de Exercícios de um sistema de tutoria para vestibulares
 brasileiros. Crie UMA questão objetiva inédita no estilo ENEM/Fuvest/Unicamp.
 Requisitos:
 - Exatamente 5 alternativas, apenas UMA correta; distratores plausíveis, baseados em erros típicos.
@@ -36,12 +37,9 @@ Requisitos:
 - `alternativas` contém só o texto de cada opção, sem "A)" etc.
 - `gabarito` é a LETRA da alternativa correta (A, B, C, D ou E), nunca o texto da resposta.
 - Na `resolucao`, NÃO cite letras de alternativas (elas serão reordenadas): refira-se ao valor ou ao texto.
-- TODA a matemática em `enunciado`, `alternativas` e `resolucao` deve estar em LaTeX inline $...$.
-  Use \frac, \sqrt, ^{}, _{}, \mathbb{R}, \le, \ge, \times, \pi, etc.
-  NÃO use \(...\), ^, sqrt(), x², "R" para os reais nem matemática em texto puro.
-  Exemplo correto: "Se $f(x) = x^{2} + 1$, quanto vale $f(2)$?"
-  Exemplo errado: "Se f(x) = x^2 + 1..." ou "Se \(f(x) = x² + 1\)...".
-"""
+- TODA a matemática em `enunciado`, `alternativas` e `resolucao` deve seguir a notação abaixo."""
+    + ESPECIFICACAO_LATEX
+)
 
 
 class RascunhoExercicio(BaseModel):

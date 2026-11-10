@@ -102,9 +102,9 @@ def desenhar_evento(evento: Evento) -> None:
         turno: TurnoTutor = evento.conteudo
         with st.chat_message("assistant", avatar="🧑‍🏫"):
             if turno.avaliacao_resposta_anterior:
-                st.caption(turno.avaliacao_resposta_anterior)
-            st.markdown(turno.explicacao)
-            st.markdown(f"**{turno.pergunta_verificacao}**")
+                st.caption(markdown_latex(turno.avaliacao_resposta_anterior))
+            st.markdown(markdown_latex(turno.explicacao))
+            st.markdown(f"**{markdown_latex(turno.pergunta_verificacao)}**")
     elif evento.tipo == TipoEvento.ALUNO:
         with st.chat_message("user"):
             st.markdown(evento.conteudo)
@@ -119,23 +119,24 @@ def desenhar_evento(evento: Evento) -> None:
 
 
 def _desenhar_notificacao(notificacao: Notificacao) -> None:
+    texto = markdown_latex(notificacao.texto)
     if notificacao.tipo == TipoNotificacao.FEEDBACK_EXERCICIO:
         caixa = st.success if notificacao.correta else st.error
         status = "Correta" if notificacao.correta else "Incorreta"
-        caixa(f"**{status}** ({notificacao.item_id}). {notificacao.texto}")
+        caixa(f"**{status}** ({notificacao.item_id}). {texto}")
     elif notificacao.tipo == TipoNotificacao.RESUMO:
         with st.container(border=True):
-            st.markdown(notificacao.texto.replace("# ", "#### 📘 ", 1))
+            st.markdown(texto.replace("# ", "#### 📘 ", 1))
     elif notificacao.tipo == TipoNotificacao.RELATORIO:
         with st.container(border=True):
-            st.markdown(f"#### 📊 Relatório\n{notificacao.texto}")
+            st.markdown(f"#### 📊 Relatório\n{texto}")
     elif notificacao.tipo == TipoNotificacao.ITEM_REMOVIDO:
-        st.warning(notificacao.texto)
+        st.warning(texto)
     elif notificacao.tipo == TipoNotificacao.TUTORIA:  # fechamento do tutor
         with st.chat_message("assistant", avatar="🧑‍🏫"):
-            st.markdown(notificacao.texto)
+            st.markdown(texto)
     else:
-        st.info(notificacao.texto)
+        st.info(texto)
 
 
 def historico(sessao: SessaoWeb) -> Fase | None:
@@ -197,14 +198,14 @@ def resultado(sessao: SessaoWeb) -> None:
             st.markdown("**Ainda vale reforçar:** " + ", ".join(d.lacunas))
     if r.relatorio:
         with st.container(border=True):
-            st.markdown(f"#### 📊 Relatório\n{r.relatorio.desempenho}")
+            st.markdown(f"#### 📊 Relatório\n{markdown_latex(r.relatorio.desempenho)}")
             for titulo, itens in (
                 ("Pontos fortes", r.relatorio.pontos_fortes),
                 ("A melhorar", r.relatorio.pontos_a_melhorar),
                 ("Recomendações", r.relatorio.recomendacoes),
             ):
                 if itens:
-                    st.markdown(f"**{titulo}**\n" + "\n".join(f"- {i}" for i in itens))
+                    st.markdown(f"**{titulo}**\n" + "\n".join(f"- {markdown_latex(i)}" for i in itens))
     if r.removidos:
         st.warning(f"{len(r.removidos)} exercício(s) removido(s) por gabarito não confirmado pelo painel.")
 

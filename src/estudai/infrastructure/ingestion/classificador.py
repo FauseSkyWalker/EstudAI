@@ -1,8 +1,7 @@
-"""Rotulagem e normalização de questões por LLM (modelo econômico).
+"""Rotulagem e normalização de questões via LLMs
 
-Uma única chamada faz as duas coisas: classifica (disciplina/tópico/conceitos/dificuldade) e,
-para questões dentro do escopo, devolve o texto com a matemática em LaTeX e os artefatos de
-extração corrigidos. Questões fora do escopo não pagam o custo de devolver o texto.
+A chamada do classificador classifica a disciplina/tópico/conceitos/dificuldade, e, para questões
+dentro do escopo normaliza a matemática para LaTex.
 """
 
 from typing import Literal
@@ -11,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from estudai.agents.base import Agent
 from estudai.domain.curriculum import CONCEITOS, Topico
-from estudai.domain.latex import latex_valido, para_inline
+from estudai.domain.latex import ESPECIFICACAO_LATEX, latex_valido, para_inline
 from estudai.domain.mensagens import Papel
 from estudai.domain.questoes import Dificuldade
 from estudai.infrastructure.ingestion.normalizacao import texto_invalido
@@ -19,7 +18,8 @@ from estudai.infrastructure.ingestion.sources import QuestaoBruta
 
 _CATALOGO = "\n".join(f"- {t.value}: {', '.join(c)}" for t, c in CONCEITOS.items())
 
-_SYSTEM = r"""Você classifica e normaliza questões de vestibular brasileiro.
+_SYSTEM = (
+    r"""Você classifica e normaliza questões de vestibular brasileiro.
 
 Classificação:
 - disciplina: "matematica", "fisica" ou "outra"
@@ -29,11 +29,9 @@ Classificação:
 - dificuldade: "facil", "media" ou "dificil" para um aluno de ensino médio.
 
 Normalização (somente se a questão for de matemática ou física e o tópico for um dos quatro):
-- Reescreva `enunciado` e `alternativas` convertendo TODA a matemática para LaTeX inline $...$.
-- IMPORTANTE: nos campos de texto use exclusivamente $...$ (cifrão), nunca \(...\), \[...\] ou $$...$$.
-- Cifrões de moeda (R$) NÃO são matemática: preserve "R$ 5,00" literalmente, sem LaTeX.
-- Use \frac, \sqrt, ^{}, _{}, \mathbb{R}, \le, \ge, \times, \pi, etc.
-- Corrija agrupamentos/parênteses, frações, raízes, expoentes, índices, conjuntos e unidades.
+- Reescreva `enunciado` e `alternativas` aplicando a notação abaixo."""
+    + ESPECIFICACAO_LATEX
+    + r"""- Corrija agrupamentos/parênteses, frações, raízes, expoentes, índices, conjuntos e unidades.
 - Corrija artefatos de extração: quebras de linha no meio de palavras, hífens, espaços duplos,
   prefixos "Descrição da imagem:" e títulos markdown.
 - Preserve o português, o sentido, a ordem e o número de alternativas. Não invente dados.
@@ -46,6 +44,7 @@ Exemplos de normalização:
 
 Responda em JSON.
 """
+)
 SYSTEM = f"{_SYSTEM}\nCatálogo de conceitos por tópico:\n{_CATALOGO}"
 
 
@@ -101,8 +100,8 @@ class ClassificadorQuestoes(Agent):
                 or any(texto_invalido(a) for a in alternativas)
                 or not latex_valido(enunciado)
                 or any(not latex_valido(a) for a in alternativas)
-            ):
-                enunciado, alternativas = questao.enunciado, questao.alternativas  # não grava saída suspeita
+            ):  # saida nao-suspeita
+                enunciado, alternativas = questao.enunciado, questao.alternativas
             rotulo.enunciado, rotulo.alternativas = enunciado, alternativas
 
         return rotulo

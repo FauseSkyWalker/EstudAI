@@ -7,16 +7,20 @@ parcial e se o gabarito parece suspeito (o que dispara o painel de resolutores).
 
 from estudai.agents.base import Agent
 from estudai.domain.correcao import AnaliseCorrecao, Correcao, RespostaAluno, acertou
+from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.mensagens import Papel
 from estudai.domain.questoes import Exercicio
 
-SYSTEM = """Você é o Agente Corretor de um sistema de tutoria para vestibulares brasileiros
+SYSTEM = (
+    """Você é o Agente Corretor de um sistema de tutoria para vestibulares brasileiros
 (Matemática e Física). Analise a resolução do aluno para UM item.
 - Classifique cada erro como "conceitual", "numerico" ou "interpretacao" e indique o conceito
   (use os rótulos do item).
 - Atribua `nota` de 0 a 1 ao raciocínio (crédito parcial é permitido mesmo com alternativa errada).
 - Se a sua própria resolução contradiz o gabarito informado, marque `gabarito_suspeito`.
 - Feedback curto, construtivo e em português."""
+    + ESPECIFICACAO_LATEX
+)
 
 
 class Corretor(Agent):
@@ -36,4 +40,10 @@ class Corretor(Agent):
             f"Resolução do aluno:\n{resposta.resolucao or '(não apresentada)'}"
         )
         analise = self._ask(SYSTEM, prompt, AnaliseCorrecao)
+        analise = analise.model_copy(
+            update={
+                "feedback": para_inline(analise.feedback),
+                "erros": [erro.model_copy(update={"descricao": para_inline(erro.descricao)}) for erro in analise.erros],
+            }
+        )
         return Correcao(**base, **analise.model_dump())

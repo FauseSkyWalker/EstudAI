@@ -1,9 +1,10 @@
-"""Normalização estrutural das bases públicas de questões.
+"""Normalização estrutural das bases públicas de questões, feito como rodada de robustez prévia.
 
-As bases misturam MathML cru, entidades HTML e marcadores de imagem. Este módulo resolve
-apenas o que é estrutural (não dá para delegar MathML ao LLM com segurança); a limpeza de
-texto e a conversão de matemática escrita à mão ficam a cargo do classificador, na mesma
-chamada em que ele rotula a questão.
+As bases de questões utilizadas originalmente utilizam MathML, HTML e marcadores de imagens.
+Realizamos uma rodada inicial de normalização e limpeza de texto determinística para maior robustez
+na chamada de LLM.
+
+As regras abaixo são heurísticas feitas com uso de LLMs
 """
 
 import html
@@ -47,7 +48,7 @@ _REFERENCIA_FIGURA = re.compile(
 def _math_para_latex(match: re.Match) -> str:
     try:
         latex = MathMLToLaTeX.convert(match.group(0)).strip()
-    except Exception:  # noqa: BLE001 - conversor de terceiros; qualquer falha invalida o texto
+    except Exception:  # noqa: BLE001
         return _FALHA_CONVERSAO
     if not latex:
         return _FALHA_CONVERSAO
@@ -67,7 +68,7 @@ def limpar_texto(texto: str) -> str:
 
 
 def referencia_figura(texto: str) -> bool:
-    """Indica se o enunciado depende de uma figura/tabela que não temos."""
+    """Indica se o enunciado depende de uma figura/tabela que não é presente."""
     return bool(_REFERENCIA_FIGURA.search(texto))
 
 

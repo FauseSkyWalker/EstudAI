@@ -5,6 +5,7 @@ from langchain_core.language_models import BaseChatModel
 
 from estudai.agents.base import Agent, to_json
 from estudai.domain.curriculum import Disciplina
+from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.material import PacoteMaterial
 from estudai.domain.mensagens import Papel
 from estudai.domain.planejamento import ObjetivoSessao
@@ -46,7 +47,9 @@ class Tutor(Agent):
     ):
         super().__init__(model, usage_cb, **kw)
         self.disciplina = disciplina
-        self._system = SYSTEM.format(disciplina=disciplina.value, orientacao=_ORIENTACOES[disciplina])
+        self._system = (
+            SYSTEM.format(disciplina=disciplina.value, orientacao=_ORIENTACOES[disciplina]) + ESPECIFICACAO_LATEX
+        )
 
     def proximo_turno(
         self,
@@ -64,4 +67,13 @@ class Tutor(Agent):
             f"Conceitos já validados: {transcricao.conceitos_validados}\n"
             "Produza a próxima rodada."
         )
-        return self._ask(self._system, prompt, TurnoTutor)
+        turno = self._ask(self._system, prompt, TurnoTutor)
+        return turno.model_copy(
+            update={
+                "avaliacao_resposta_anterior": (
+                    para_inline(turno.avaliacao_resposta_anterior) if turno.avaliacao_resposta_anterior else None
+                ),
+                "explicacao": para_inline(turno.explicacao),
+                "pergunta_verificacao": para_inline(turno.pergunta_verificacao),
+            }
+        )
