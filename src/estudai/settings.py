@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     sandbox_timeout_s: float = 10.0
     figuras: bool = True
     figuras_timeout_s: float = 30.0
+    max_figuras_tutor: int = 2
 
     # Limites de execução
     kb_k: int = 4

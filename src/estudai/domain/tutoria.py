@@ -22,18 +22,18 @@ class TurnoTutor(BaseModel):
         description="Conceitos cujo entendimento o aluno já demonstrou nesta sessão.",
     )
     objetivo_atingido: bool = False
-    figura: PedidoFigura | None = Field(
-        default=None,
+    figuras: list[PedidoFigura] = Field(
+        default_factory=list,
         description=(
-            "Opcional: um gráfico ou diagrama que ajude a explicação de forma visual, como, por exemplo, "
+            "Opcional: gráficos ou diagramas que ajudem a explicação de forma visual, como, por exemplo, "
             "gráficos de funções, de cinemática, diagramas de forças e árvores de probabilidade. "
-            "Escolha `tipo` grafico (matplotlib) ou diagrama (Mermaid). Nulo quando não for apropriado "
-            "ou necessário ao ensino."
+            "Escolha `tipo` grafico (matplotlib) ou diagrama (Mermaid). Lista vazia quando não for "
+            "apropriado ou necessário ao ensino."
         ),
     )
-    # Preenchido pelo sistema depois de desenhar `figura` na sandbox. Fora do schema pedido ao LLM e
-    # fora dos dumps (logs/mensagens), porque a imagem é pesada.
-    imagem: SkipJsonSchema[Figura | None] = Field(default=None, exclude=True)
+    # Preenchido pelo sistema depois de desenhar `figuras` na sandbox. Fora do schema pedido ao LLM e
+    # fora dos dumps (logs/mensagens), porque as imagens são pesadas.
+    imagens: SkipJsonSchema[list[Figura]] = Field(default_factory=list, exclude=True)
 
 
 class TrocaTutoria(BaseModel):
@@ -64,8 +64,8 @@ class TranscricaoTutoria(BaseModel):
             if t.turno.avaliacao_resposta_anterior:
                 linhas.append(f"TUTOR (avaliação): {t.turno.avaliacao_resposta_anterior}")
             linhas.append(f"TUTOR [{t.turno.conceito_alvo}]: {t.turno.explicacao}")
-            if t.turno.figura:  # juízes e resumo precisam saber qual figura foi mostrada
-                linhas.append(f"TUTOR (figura): {t.turno.figura.descricao}")
+            for figura in t.turno.figuras:  # juízes e resumo precisam saber quais figuras foram mostradas
+                linhas.append(f"TUTOR (figura): {figura.descricao}")
             linhas.append(f"TUTOR (pergunta): {t.turno.pergunta_verificacao}")
             if t.resposta_aluno is not None:
                 linhas.append(f"ALUNO: {t.resposta_aluno}")

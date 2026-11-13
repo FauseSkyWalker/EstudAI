@@ -157,7 +157,8 @@ desliga. O terminal não exibe imagens: as figuras do Tutor são salvas em
 
 ### Figuras dos agentes
 
-O Tutor pode pedir uma figura junto com a explicação. Há dois tipos:
+O Tutor pode pedir figuras junto com a explicação (até `ESTUDAI_MAX_FIGURAS_TUTOR`, padrão 2). Há
+dois tipos:
 
 - **gráfico**: código matplotlib curto, que roda na mesma **sandbox** da verificação simbólica
   (subprocesso isolado, sem rede, com escrita em disco bloqueada pelo audit hook e com tempo

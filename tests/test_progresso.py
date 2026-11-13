@@ -18,7 +18,7 @@ def executor():
 @pytest.fixture
 def eventos(kb, banco, executor, tmp_path) -> list[EventoProgresso]:
     """Um ciclo completo roteirizado (com figura), observado do começo ao fim."""
-    orq, _ = montar(kb, banco, executor, tmp_path, figuras=RendererFalso(), figura=FIGURA)
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=RendererFalso(), figuras=[FIGURA])
     registrados: list[EventoProgresso] = []
     lock = threading.Lock()
 
@@ -86,3 +86,15 @@ def test_callback_ignora_nos_internos_do_agente_de_ferramentas():
     cb.on_chain_start({}, {}, run_id=2, metadata={"langgraph_node": "model"}, name="model")
     cb.on_chain_start({}, {}, run_id=3, metadata={"langgraph_node": "tutor"}, name="RunnableSequence")
     assert [e.descricao for e in vistos] == ["Tutoria"]
+
+
+def test_cada_figura_emite_um_evento_de_progresso(kb, banco, executor, tmp_path):
+    segunda = {"codigo": "plt.plot([1, 0], [0, 1])", "descricao": "Outra reta"}
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=RendererFalso(), figuras=[FIGURA, segunda])
+    registrados: list[EventoProgresso] = []
+
+    orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"), observador=registrados.append)
+
+    figuras = [e for e in registrados if e.tipo == TipoProgresso.FIGURA]
+    assert len(figuras) == 2
+    assert "Reta identidade" in figuras[0].descricao and "Outra reta" in figuras[1].descricao

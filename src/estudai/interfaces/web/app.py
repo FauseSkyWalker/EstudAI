@@ -106,8 +106,8 @@ def desenhar_evento(evento: Evento) -> None:
             if turno.avaliacao_resposta_anterior:
                 st.caption(markdown_latex(turno.avaliacao_resposta_anterior))
             st.markdown(markdown_latex(turno.explicacao))
-            if turno.imagem is not None:
-                desenhar_figura(turno.imagem)
+            for figura in turno.imagens:
+                desenhar_figura(figura)
             st.markdown(f"**{markdown_latex(turno.pergunta_verificacao)}**")
     elif evento.tipo == TipoEvento.ALUNO:
         with st.chat_message("user"):
@@ -139,8 +139,8 @@ def _desenhar_notificacao(notificacao: Notificacao) -> None:
     elif notificacao.tipo == TipoNotificacao.TUTORIA:  # fechamento do tutor
         with st.chat_message("assistant", avatar="🧑‍🏫"):
             st.markdown(texto)
-            if notificacao.figura is not None:
-                desenhar_figura(notificacao.figura)
+            for figura in notificacao.figuras:
+                desenhar_figura(figura)
     else:
         st.info(texto)
 

@@ -147,7 +147,7 @@ def test_tela_mostra_figura_do_tutor_e_bastidores(app):
         conceito_alvo="funcao_quadratica",
         explicacao="Veja a parábola.",
         pergunta_verificacao="Onde ficam as raízes?",
-        imagem=Figura(descricao="Parábola com raízes 1 e 3", formato=FormatoFigura.PNG, conteudo=PNG_1PX),
+        imagens=[Figura(descricao="Parábola com raízes 1 e 3", formato=FormatoFigura.PNG, conteudo=PNG_1PX)],
     )
     sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
     sessao.learner._registrar(TipoEvento.TUTOR, turno)
@@ -190,11 +190,13 @@ def test_tela_aceita_figura_mermaid(app):
         conceito_alvo="funcao_afim",
         explicacao="Veja o fluxo.",
         pergunta_verificacao="Qual é o próximo passo?",
-        imagem=Figura(
-            descricao="Fluxo da função afim",
-            formato=FormatoFigura.MERMAID,
-            conteudo="flowchart TD\n  A[Função afim] --> B[Gráfico: reta]",
-        ),
+        imagens=[
+            Figura(
+                descricao="Fluxo da função afim",
+                formato=FormatoFigura.MERMAID,
+                conteudo="flowchart TD\n  A[Função afim] --> B[Gráfico: reta]",
+            )
+        ],
     )
     sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
     sessao.learner._registrar(TipoEvento.TUTOR, turno)

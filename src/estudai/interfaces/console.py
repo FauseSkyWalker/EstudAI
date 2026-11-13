@@ -49,7 +49,8 @@ class ConsoleLearner:
         if turno.avaliacao_resposta_anterior:
             self._console.print(Panel(turno.avaliacao_resposta_anterior, title="Sobre sua resposta", style="cyan"))
         self._console.print(Panel(Markdown(turno.explicacao), title=f"Tutor · {turno.conceito_alvo}"))
-        self._mostrar_figura(turno.imagem)
+        for figura in turno.imagens:
+            self._mostrar_figura(figura)
         self._console.print(f"[bold]{turno.pergunta_verificacao}[/bold]")
         return Prompt.ask("Sua resposta")
 
@@ -69,4 +70,5 @@ class ConsoleLearner:
             titulo = notificacao.tipo.value
             estilo = "yellow" if notificacao.tipo in (TipoNotificacao.ITEM_REMOVIDO, TipoNotificacao.AVISO) else "green"
         self._console.print(Panel(Markdown(notificacao.texto), title=titulo, style=estilo))
-        self._mostrar_figura(notificacao.figura)
+        for figura in notificacao.figuras:
+            self._mostrar_figura(figura)

@@ -20,7 +20,7 @@ _ORIENTACOES = {
     ),
     Disciplina.FISICA: (
         "Parta do fenômeno físico, explicite grandezas e unidades, indique o referencial e só "
-        "então a equação; verifique a coerência dimensional e a ordem de grandeza. "
+        "então a equação. Verifique a coerência dimensional e a ordem de grandeza. "
         "Exemplos de conceitos visuais: gráficos sxt e vxt, trajetórias de lançamento, "
         "diagramas de corpo livre, planos inclinados e circuitos."
     ),
@@ -32,9 +32,9 @@ _REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visua
     rotulados e unidades.
   - `tipo="diagrama"` para diagramas conceituais. Escreva fonte Mermaid (flowchart, mindmap, timeline,
     stateDiagram ou classDiagram), com rótulos curtos e sem links/cliques.
-  Use no máximo uma figura por rodada, com números coerentes com a explicação. A figura não pode
-  revelar a resposta da pergunta de verificação; a `descricao` deve dizer apenas o que é seguro
-  mostrar. Deixe `figura` nulo quando o conceito não for visual ou quando a figura repetir a anterior.
+  Use no máximo {max_figuras} figura(s) por rodada, com números coerentes com a explicação. As
+  figuras e a descrição não podem revelar a resposta da pergunta de verificação. Deixe `figuras` vazio quando 
+  o conceito não for visual ou quando a figura repetir uma anterior.
 """
 
 SYSTEM = """Você é o Agente Tutor de {disciplina} de um sistema de tutoria para vestibulares brasileiros.
@@ -64,15 +64,17 @@ class Tutor(Agent):
         *,
         usage_cb: BaseCallbackHandler | None = None,
         figuras: bool = True,
+        max_figuras: int = 2,
         **kw,
     ):
         super().__init__(model, usage_cb, **kw)
         self.disciplina = disciplina
+        regra_figuras = _REGRA_FIGURAS.format(max_figuras=max_figuras) if figuras else ""
         self._system = (
             SYSTEM.format(
                 disciplina=disciplina.value,
                 orientacao=_ORIENTACOES[disciplina],
-                figuras=_REGRA_FIGURAS if figuras else "",
+                figuras=regra_figuras,
             )
             + ESPECIFICACAO_LATEX
         )

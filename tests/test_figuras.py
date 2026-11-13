@@ -127,53 +127,89 @@ def test_composite_despacha_por_tipo():
 
 def test_png_fica_fora_do_schema_do_modelo_e_dos_logs():
     schema = TurnoTutor.model_json_schema()
-    assert "figura" in schema["properties"] and "imagem" not in schema["properties"]
+    assert "figuras" in schema["properties"] and "imagens" not in schema["properties"]
 
     turno = TurnoTutor(
         conceito_alvo="funcao_quadratica",
         explicacao="Veja o gráfico.",
         pergunta_verificacao="Quais as raízes?",
-        figura=PARABOLA,
-        imagem=Figura(descricao=PARABOLA.descricao, formato=FormatoFigura.PNG, conteudo="AAAA"),
+        figuras=[PARABOLA],
+        imagens=[Figura(descricao=PARABOLA.descricao, formato=FormatoFigura.PNG, conteudo="AAAA")],
     )
-    assert "imagem" not in turno.model_dump() and "AAAA" not in turno.model_dump_json()
+    assert "imagens" not in turno.model_dump() and "AAAA" not in turno.model_dump_json()
 
 
-def test_transcricao_menciona_a_figura():
-    turno = TurnoTutor(conceito_alvo="c", explicacao="e", pergunta_verificacao="p?", figura=PARABOLA)
+def test_transcricao_menciona_as_figuras():
+    turno = TurnoTutor(conceito_alvo="c", explicacao="e", pergunta_verificacao="p?", figuras=[PARABOLA, DIAGRAMA])
     objetivo = ObjetivoSessao(topico=T, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="")
     transcricao = TranscricaoTutoria(objetivo=objetivo, trocas=[TrocaTutoria(rodada=1, turno=turno)])
-    assert "TUTOR (figura): Parábola com raízes 1 e 3" in transcricao.como_texto()
+    texto = transcricao.como_texto()
+    assert "TUTOR (figura): Parábola com raízes 1 e 3" in texto
+    assert "TUTOR (figura): Fluxo da função afim" in texto
 
 
 # --- integração no ciclo ------------------------------------------------------------------
 
 
-def test_ciclo_entrega_a_figura_ao_aluno(kb, banco, executor, tmp_path):
-    figuras = RendererFalso()
-    orq, _ = montar(kb, banco, executor, tmp_path, figuras=figuras, figura=FIGURA)
+def test_ciclo_entrega_as_figuras_ao_aluno(kb, banco, executor, tmp_path):
+    renderer = RendererFalso()
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=renderer, figuras=[FIGURA])
     aluno = ScriptedLearner(padrao="certa")
     r = orq.executar_ciclo("ana", T, aluno)
 
-    assert [p.descricao for p in figuras.pedidos] == ["Reta identidade"]
-    assert aluno.turnos[0].imagem is not None and aluno.turnos[0].imagem.descricao == "Reta identidade"
-    assert r.transcricao.trocas[0].turno.figura is not None
+    assert [p.descricao for p in renderer.pedidos] == ["Reta identidade"]
+    assert aluno.turnos[0].imagens[0].descricao == "Reta identidade"
+    assert r.transcricao.trocas[0].turno.figuras[0].descricao == "Reta identidade"
 
 
-def test_figura_que_falha_e_descartada_sem_derrubar_o_ciclo(kb, banco, executor, tmp_path):
-    orq, _ = montar(kb, banco, executor, tmp_path, figuras=RendererFalso(falha=True), figura=FIGURA)
+def test_ciclo_entrega_multiplas_figuras(kb, banco, executor, tmp_path):
+    segunda = {"tipo": "diagrama", "codigo": "flowchart TD\n  A --> B", "descricao": "Fluxo"}
+    renderer = RendererFalso()
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=renderer, figuras=[FIGURA, segunda])
     aluno = ScriptedLearner(padrao="certa")
     r = orq.executar_ciclo("ana", T, aluno)
 
-    assert aluno.turnos[0].imagem is None
-    assert r.transcricao.trocas[0].turno.figura is None  # a transcrição não cita figura que o aluno não viu
+    assert [p.descricao for p in renderer.pedidos] == ["Reta identidade", "Fluxo"]
+    assert [i.descricao for i in aluno.turnos[0].imagens] == ["Reta identidade", "Fluxo"]
+    assert [f.descricao for f in r.transcricao.trocas[0].turno.figuras] == ["Reta identidade", "Fluxo"]
 
 
-def test_sem_renderer_o_pedido_de_figura_e_ignorado(kb, banco, executor, tmp_path):
-    orq, _ = montar(kb, banco, executor, tmp_path, figura=FIGURA)
+def test_ciclo_respeita_o_limite_de_figuras(kb, banco, executor, tmp_path):
+    segunda = {"codigo": "plt.plot([1, 0], [0, 1])", "descricao": "Outra reta"}
+    renderer = RendererFalso()
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=renderer, figuras=[FIGURA, segunda], max_figuras=1)
     aluno = ScriptedLearner(padrao="certa")
     orq.executar_ciclo("ana", T, aluno)
-    assert aluno.turnos[0].figura is None and aluno.turnos[0].imagem is None
+
+    assert [p.descricao for p in renderer.pedidos] == ["Reta identidade"]
+    assert [i.descricao for i in aluno.turnos[0].imagens] == ["Reta identidade"]
+
+
+def test_figura_que_falha_nao_descarta_as_outras(kb, banco, executor, tmp_path):
+    segunda = {"codigo": "plt.plot([1, 0], [0, 1])", "descricao": "Outra reta"}
+    renderer = RendererFalso(falhar_em={"Reta identidade"})
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=renderer, figuras=[FIGURA, segunda])
+    aluno = ScriptedLearner(padrao="certa")
+    r = orq.executar_ciclo("ana", T, aluno)
+
+    assert [i.descricao for i in aluno.turnos[0].imagens] == ["Outra reta"]
+    assert [f.descricao for f in r.transcricao.trocas[0].turno.figuras] == ["Outra reta"]
+
+
+def test_todas_as_figuras_falhando_nao_derrubam_o_ciclo(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=RendererFalso(falha=True), figuras=[FIGURA])
+    aluno = ScriptedLearner(padrao="certa")
+    r = orq.executar_ciclo("ana", T, aluno)
+
+    assert aluno.turnos[0].imagens == []
+    assert r.transcricao.trocas[0].turno.figuras == []  # a transcrição não cita figura que o aluno não viu
+
+
+def test_sem_renderer_os_pedidos_de_figura_sao_ignorados(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, figuras=[FIGURA])
+    aluno = ScriptedLearner(padrao="certa")
+    orq.executar_ciclo("ana", T, aluno)
+    assert aluno.turnos[0].figuras == [] and aluno.turnos[0].imagens == []
 
 
 def test_terminal_salva_a_figura_e_mostra_o_caminho(renderer, tmp_path):

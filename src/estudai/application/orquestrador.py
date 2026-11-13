@@ -30,6 +30,7 @@ from estudai.application.telemetria import UsageLedger, UsageSummary
 from estudai.application.validacao import ValidadorExercicios
 from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
 from estudai.domain.curriculum import Disciplina, Topico
+from estudai.domain.figura import Figura, PedidoFigura
 from estudai.domain.material import PacoteMaterial
 from estudai.domain.memoria import registrar_episodio
 from estudai.domain.mensagens import Mensagem, Papel, TipoMensagem
@@ -93,6 +94,7 @@ class Orquestrador:
         config: ConfigSessao | None = None,
         ledger: UsageLedger | None = None,
         figuras: FigureRenderer | None = None,
+        max_figuras: int = 2,
     ) -> None:
         self._diagnosticador = diagnosticador
         self._tutores = tutores
@@ -106,6 +108,7 @@ class Orquestrador:
         self._config = config or ConfigSessao()
         self._ledger = ledger or UsageLedger()
         self._figuras = figuras  # None = o Tutor não desenha figuras
+        self._max_figuras = max_figuras
 
     @property
     def config(self) -> ConfigSessao:
@@ -226,13 +229,13 @@ class Orquestrador:
             except AgentOutputError:
                 transcricao.encerramento = Encerramento.FALHA
                 break
-            turno = self._draw_figure(turno)
+            turno = self._draw_figures(turno)
             log.send(Papel.TUTOR, Papel.ALUNO, TipoMensagem.TUTORIA, turno, referencias=material.referencias)
             concluido = turno.objetivo_atingido or alvo <= set(
                 transcricao.conceitos_validados + turno.conceitos_validados
             )
             if concluido:
-                aluno.notify(Notificacao(tipo=TipoNotificacao.TUTORIA, texto=turno.explicacao, figura=turno.imagem))
+                aluno.notify(Notificacao(tipo=TipoNotificacao.TUTORIA, texto=turno.explicacao, figuras=turno.imagens))
                 transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno))
                 transcricao.encerramento = Encerramento.OBJETIVO_ATINGIDO
                 break
@@ -241,20 +244,26 @@ class Orquestrador:
             transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno, resposta_aluno=resposta))
         return transcricao
 
-    def _draw_figure(self, turno: TurnoTutor) -> TurnoTutor:
-        """Desenha a figura pedida pelo Tutor na sandbox. Se falhar, a rodada segue só com o texto
-        (e o pedido é descartado, para a transcrição não citar uma figura que o aluno não viu)."""
-        if turno.figura is None:  # sem figura no turno
+    def _draw_figures(self, turno: TurnoTutor) -> TurnoTutor:
+        """Desenha as figuras pedidas pelo Tutor. Cada falha descarta apenas aquela figura, para a
+        transcrição não citar algo que o aluno não viu."""
+        if not turno.figuras:  # sem figuras no turno
             return turno
         if self._figuras is None:  # sem renderizador
-            return turno.model_copy(update={"figura": None})
-        _avisar_progresso({"agente": "Tutor", "descricao": f"desenhando figura: {turno.figura.descricao}"})
-        try:
-            figura = self._figuras.render(turno.figura)
-        except Exception as exc:  # noqa: BLE001 - figura nunca deve descartar ciclo
-            _avisar_progresso({"agente": "Tutor", "descricao": f"figura descartada ({str(exc)[:120]})"})
-            return turno.model_copy(update={"figura": None})
-        return turno.model_copy(update={"imagem": figura})
+            return turno.model_copy(update={"figuras": []})
+
+        aceitos: list[PedidoFigura] = []
+        imagens: list[Figura] = []
+        for indice, pedido in enumerate(turno.figuras[: max(0, self._max_figuras)], start=1):
+            _avisar_progresso({"agente": "Tutor", "descricao": f"desenhando figura {indice}: {pedido.descricao}"})
+            try:
+                imagem = self._figuras.render(pedido)
+            except Exception as exc:  # noqa: BLE001 - figura nunca deve descartar o ciclo
+                _avisar_progresso({"agente": "Tutor", "descricao": f"figura {indice} descartada ({str(exc)[:120]})"})
+                continue
+            aceitos.append(pedido)
+            imagens.append(imagem)
+        return turno.model_copy(update={"figuras": aceitos, "imagens": imagens})
 
     def _summarize_tutoring(
         self, transcricao: TranscricaoTutoria, material: PacoteMaterial, aluno: Learner, log: MessageLog

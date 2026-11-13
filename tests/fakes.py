@@ -168,12 +168,12 @@ class ScriptedLearner:
 
 
 class RendererFalso:
-    def __init__(self, falha: bool = False) -> None:
-        self.falha, self.pedidos = falha, []
+    def __init__(self, falha: bool = False, falhar_em: set[str] | None = None) -> None:
+        self.falha, self.falhar_em, self.pedidos = falha, falhar_em or set(), []
 
     def render(self, pedido: PedidoFigura) -> Figura:
         self.pedidos.append(pedido)
-        if self.falha:
+        if self.falha or pedido.descricao in self.falhar_em:
             raise FiguraError("código inválido")
         return Figura(
             descricao=pedido.descricao,

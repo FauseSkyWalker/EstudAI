@@ -307,7 +307,9 @@ def _system_do_tutor(**kwargs) -> str:
 
 
 def test_tutor_inclui_regra_de_figuras_por_padrao():
-    assert "Figuras:" in _system_do_tutor()
+    system = _system_do_tutor()
+    assert "Figuras:" in system and "no máximo 2 figura" in system
+    assert "no máximo 1 figura" in _system_do_tutor(max_figuras=1)
 
 
 def test_tutor_omite_regra_de_figuras_quando_desligadas():

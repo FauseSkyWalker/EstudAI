@@ -228,7 +228,15 @@ class Container:
             diagnosticador=Diagnosticador(
                 self.fronteira(Papel.DIAGNOSTICADOR), max_perguntas=s.max_perguntas_diagnostico
             ),
-            tutores={d: Tutor(self.fronteira(Papel.TUTOR), d, figuras=usar_figuras) for d in Disciplina},
+            tutores={
+                d: Tutor(
+                    self.fronteira(Papel.TUTOR),
+                    d,
+                    figuras=usar_figuras,
+                    max_figuras=s.max_figuras_tutor,
+                )
+                for d in Disciplina
+            },
             conteudo=self.conteudo,
             resumo=AgenteResumo(self.economico(Papel.RESUMO)),
             corretor=Corretor(self.fronteira(Papel.CORRETOR)),
@@ -239,4 +247,5 @@ class Container:
             config=config,
             ledger=self.ledger,
             figuras=self.figuras if usar_figuras else None,
+            max_figuras=s.max_figuras_tutor,
         )
