@@ -14,6 +14,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import PrivateAttr, ValidationError
 
 from estudai.domain.correcao import RespostaAluno
+from estudai.domain.figura import Figura, FiguraError, PedidoFigura
 from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
@@ -164,3 +165,17 @@ class ScriptedLearner:
 
     def notify(self, notificacao: Notificacao) -> None:
         self.notificacoes.append(notificacao.texto)
+
+
+class RendererFalso:
+    def __init__(self, falha: bool = False) -> None:
+        self.falha, self.pedidos = falha, []
+
+    def render(self, pedido: PedidoFigura) -> Figura:
+        self.pedidos.append(pedido)
+        if self.falha:
+            raise FiguraError("código inválido")
+        return Figura(descricao=pedido.descricao, png_base64="iVBORw0KGgo=")
+
+
+FIGURA = {"codigo": "plt.plot([0, 1], [0, 1])", "descricao": "Reta identidade"}

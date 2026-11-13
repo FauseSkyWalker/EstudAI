@@ -289,6 +289,31 @@ def test_tutor_normaliza_latex_nas_saidas():
     assert turno.pergunta_verificacao == r"Quanto vale \(f(1)\)?"
 
 
+def _system_do_tutor(**kwargs) -> str:
+    llm = FakeChatModel(
+        {
+            ("tutor", "TurnoTutor"): [
+                {"conceito_alvo": "funcao_quadratica", "explicacao": "x", "pergunta_verificacao": "y?"}
+            ]
+        }
+    )
+    objetivo = ObjetivoSessao(
+        topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
+    )
+    Tutor(llm, Disciplina.MATEMATICA, **kwargs).proximo_turno(
+        {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
+    )
+    return next(m.content for m in llm.requests[0].messages if m.type == "system")
+
+
+def test_tutor_inclui_regra_de_figuras_por_padrao():
+    assert "Figuras:" in _system_do_tutor()
+
+
+def test_tutor_omite_regra_de_figuras_quando_desligadas():
+    assert "Figuras:" not in _system_do_tutor(figuras=False)
+
+
 def test_corretor_normaliza_latex_no_feedback_e_nos_erros():
     llm = FakeChatModel(
         {

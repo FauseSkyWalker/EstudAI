@@ -158,10 +158,11 @@ desliga. O terminal não exibe imagens: as figuras do Tutor são salvas em
 ### Figuras dos agentes
 
 O Tutor pode pedir uma figura junto com a explicação: ele escreve um código matplotlib curto, que
-roda na mesma **sandbox** da verificação simbólica (subprocesso isolado, sem rede, sem gravar
-arquivos, com tempo limite) e volta como PNG. Se o código falhar, a rodada segue só com o texto e
-a figura é descartada. A transcrição (lida pelo Resumo e pelos juízes) registra a legenda da
-figura, nunca a imagem. Para desligar: `ESTUDAI_FIGURAS=false` no `.env`.
+roda na mesma **sandbox** da verificação simbólica (subprocesso isolado, sem rede, com escrita em
+disco bloqueada pelo audit hook e com tempo limite) e volta como PNG. A leitura de arquivos não é
+bloqueada. Se o código falhar, a rodada segue só com o texto e a figura é descartada. A transcrição
+(lida pelo Resumo e pelos juízes) registra a legenda da figura, nunca a imagem. Para desligar:
+`ESTUDAI_FIGURAS=false` no `.env`.
 
 ## Experimento (Seção 5.3)
 

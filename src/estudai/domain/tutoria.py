@@ -25,12 +25,13 @@ class TurnoTutor(BaseModel):
     figura: PedidoFigura | None = Field(
         default=None,
         description=(
-            "Opcional: um gráfico ou diagrama que ajude a explicação (gráfico de função, parábola e vértice, "
-            "gráfico s×t ou v×t, diagrama de forças, árvore de probabilidades). Null quando não ajudar."
+            "Opcional: um gráfico ou diagrama que ajude a explicação de forma visual, como, por exemplo, "
+            "gráficos de funções, de cinemática, diagramas de forças e árvores de probabilidade. "
+            "Nulo quando não for apropriado ou necessário ao ensino."
         ),
     )
     # Preenchido pelo sistema depois de desenhar `figura` na sandbox. Fora do schema pedido ao LLM e
-    # fora dos dumps (logs/mensagens), porque o PNG é pesado.
+    # fora dos dumps (logs/mensagens), porque a imagem é pesada.
     imagem: SkipJsonSchema[Figura | None] = Field(default=None, exclude=True)
 
 
@@ -62,7 +63,7 @@ class TranscricaoTutoria(BaseModel):
             if t.turno.avaliacao_resposta_anterior:
                 linhas.append(f"TUTOR (avaliação): {t.turno.avaliacao_resposta_anterior}")
             linhas.append(f"TUTOR [{t.turno.conceito_alvo}]: {t.turno.explicacao}")
-            if t.turno.figura:  # juízes e resumo sabem que houve uma figura e o que ela mostrava
+            if t.turno.figura:  # juízes e resumo precisam saber qual figura foi mostrada
                 linhas.append(f"TUTOR (figura): {t.turno.figura.descricao}")
             linhas.append(f"TUTOR (pergunta): {t.turno.pergunta_verificacao}")
             if t.resposta_aluno is not None:

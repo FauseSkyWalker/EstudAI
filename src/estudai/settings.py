@@ -8,8 +8,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
-    # openrouter: qualquer modelo do OpenRouter (model = "fornecedor/modelo", ex. "google/gemini-3-flash-preview")
-    # claude_cli: usa o Claude Code CLI instalado (`claude -p`) e a autenticação dele, sem chave no .env
     provider: Literal["gemini", "openai_compat", "openrouter", "claude_cli"] = "gemini"
     model: str
     base_url: str | None = None
@@ -50,8 +48,8 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 180.0
     llm_max_attempts: int = 4
     sandbox_timeout_s: float = 10.0
-    # o Tutor pode anexar gráficos/diagramas (matplotlib na sandbox); false desliga
     figuras: bool = True
+    figuras_timeout_s: float = 30.0
 
     # Limites de execução
     kb_k: int = 4

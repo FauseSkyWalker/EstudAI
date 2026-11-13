@@ -3,8 +3,7 @@
 import threading
 
 import pytest
-from fakes import ScriptedLearner
-from test_figuras import FIGURA, RendererFalso
+from fakes import FIGURA, RendererFalso, ScriptedLearner
 from test_orquestrador import T, montar
 
 from estudai.application.progresso import ETAPAS, EventoProgresso, ProgressoCallback, TipoProgresso

@@ -188,7 +188,8 @@ def experimento(
         return JsonProfileRepository(perfis_raiz)
 
     exp = Experimento(
-        fabrica_orquestrador=lambda cfg, fonte, perfis: container.orquestrador(cfg, fonte, perfis),
+        # aluno simulado/juízes não usam imagens
+        fabrica_orquestrador=lambda cfg, fonte, perfis: container.orquestrador(cfg, fonte, perfis, com_figuras=False),
         fabrica_perfis=perfis_novos,
         banco=container.banco,
         llm_aluno=container.chat(s.student or s.economic, Papel.ALUNO_SIMULADO, ledger_avaliacao),

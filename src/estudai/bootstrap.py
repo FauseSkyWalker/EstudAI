@@ -163,7 +163,7 @@ class Container:
     @cached_property
     def figuras(self) -> FigureRenderer | None:
         """Desenhista das figuras pedidas pelo Tutor (matplotlib na sandbox); None se desligado."""
-        return MatplotlibRenderer() if self.settings.figuras else None
+        return MatplotlibRenderer(timeout_s=self.settings.figuras_timeout_s) if self.settings.figuras else None
 
     def dados_faltando(self) -> list[tuple[Path, str]]:
         """(arquivo ausente, comando que o gera) — para as interfaces falharem cedo, antes de gastar LLM."""
@@ -207,16 +207,19 @@ class Container:
         config: ConfigSessao | None = None,
         fonte: FonteExercicios = "gerado",
         perfis: ProfileRepository | None = None,
+        com_figuras: bool | None = None,
     ) -> Orquestrador:
         s = self.settings
         config = config or ConfigSessao(
             max_rodadas_tutoria=s.max_rodadas_tutoria, exercicios_por_sessao=s.exercicios_por_sessao
         )
+        # `com_figuras=False` desliga tanto o renderer quanto a instrução no prompt do Tutor
+        usar_figuras = s.figuras if com_figuras is None else com_figuras
         return Orquestrador(
             diagnosticador=Diagnosticador(
                 self.fronteira(Papel.DIAGNOSTICADOR), max_perguntas=s.max_perguntas_diagnostico
             ),
-            tutores={d: Tutor(self.fronteira(Papel.TUTOR), d) for d in Disciplina},
+            tutores={d: Tutor(self.fronteira(Papel.TUTOR), d, figuras=usar_figuras) for d in Disciplina},
             conteudo=self.conteudo,
             resumo=AgenteResumo(self.economico(Papel.RESUMO)),
             corretor=Corretor(self.fronteira(Papel.CORRETOR)),
@@ -226,5 +229,5 @@ class Container:
             banco=self.banco,
             config=config,
             ledger=self.ledger,
-            figuras=self.figuras,
+            figuras=self.figuras if usar_figuras else None,
         )

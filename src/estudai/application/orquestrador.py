@@ -30,7 +30,6 @@ from estudai.application.telemetria import UsageLedger, UsageSummary
 from estudai.application.validacao import ValidadorExercicios
 from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
 from estudai.domain.curriculum import Disciplina, Topico
-from estudai.domain.figura import FiguraError
 from estudai.domain.material import PacoteMaterial
 from estudai.domain.memoria import registrar_episodio
 from estudai.domain.mensagens import Mensagem, Papel, TipoMensagem
@@ -123,7 +122,6 @@ class Orquestrador:
         aluno: Learner,
         observador: ObservadorProgresso | None = None,
     ) -> ResultadoCiclo:
-        """`observador` recebe, em tempo real, o que cada agente está fazendo (ver `application.progresso`)."""
         start = time.perf_counter()
         mark = self._ledger.mark()
         message_log = MessageLog()
@@ -246,12 +244,14 @@ class Orquestrador:
     def _draw_figure(self, turno: TurnoTutor) -> TurnoTutor:
         """Desenha a figura pedida pelo Tutor na sandbox. Se falhar, a rodada segue só com o texto
         (e o pedido é descartado, para a transcrição não citar uma figura que o aluno não viu)."""
-        if turno.figura is None or self._figuras is None:
-            return turno.model_copy(update={"figura": None}) if turno.figura else turno
+        if turno.figura is None:  # sem figura no turno
+            return turno
+        if self._figuras is None:  # sem renderizador
+            return turno.model_copy(update={"figura": None})
         _avisar_progresso({"agente": "Tutor", "descricao": f"desenhando figura: {turno.figura.descricao}"})
         try:
             figura = self._figuras.render(turno.figura)
-        except FiguraError as exc:
+        except Exception as exc:  # noqa: BLE001 - figura nunca deve descartar ciclo
             _avisar_progresso({"agente": "Tutor", "descricao": f"figura descartada ({str(exc)[:120]})"})
             return turno.model_copy(update={"figura": None})
         return turno.model_copy(update={"imagem": figura})

@@ -1,7 +1,7 @@
 """Figuras desenhadas pelos agentes: renderização na sandbox, schema do Tutor e integração no ciclo."""
 
 import pytest
-from fakes import ScriptedLearner
+from fakes import FIGURA, RendererFalso, ScriptedLearner
 from test_orquestrador import T, montar
 
 from estudai.domain.figura import Figura, FiguraError, PedidoFigura
@@ -46,15 +46,26 @@ def test_desenha_png_valido(renderer):
     [
         "raise ValueError('falhou')",  # erro no código do modelo
         "x = 1",  # não desenhou nada
-        "open('invasao.txt', 'w').write('x')",  # gravar arquivo é bloqueado pela sandbox
         "import socket; socket.create_connection(('example.com', 80))",  # rede bloqueada
     ],
 )
-def test_codigo_ruim_ou_malicioso_vira_figura_error(renderer, codigo, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def test_codigo_ruim_ou_malicioso_vira_figura_error(renderer, codigo):
     with pytest.raises(FiguraError):
         renderer.render(PedidoFigura(codigo=codigo, descricao="x"))
-    assert not (tmp_path / "invasao.txt").exists()
+
+
+def test_escrita_em_disco_e_bloqueada_inclusive_via_os(renderer, tmp_path):
+    arquivo = tmp_path / "invasao.txt"
+    pasta = tmp_path / "invasao"
+    tentativas = [
+        f"open({str(arquivo)!r}, 'w').write('x')",
+        f"import os; os.open({str(arquivo)!r}, os.O_WRONLY | os.O_CREAT)",
+        f"import os; os.mkdir({str(pasta)!r})",
+    ]
+    for codigo in tentativas:
+        with pytest.raises(FiguraError):
+            renderer.render(PedidoFigura(codigo=codigo, descricao="x"))
+    assert not arquivo.exists() and not pasta.exists()
 
 
 # --- domínio -----------------------------------------------------------------------------
@@ -82,20 +93,6 @@ def test_transcricao_menciona_a_figura():
 
 
 # --- integração no ciclo ------------------------------------------------------------------
-
-
-class RendererFalso:
-    def __init__(self, falha: bool = False) -> None:
-        self.falha, self.pedidos = falha, []
-
-    def render(self, pedido: PedidoFigura) -> Figura:
-        self.pedidos.append(pedido)
-        if self.falha:
-            raise FiguraError("código inválido")
-        return Figura(descricao=pedido.descricao, png_base64="iVBORw0KGgo=")
-
-
-FIGURA = {"codigo": "plt.plot([0, 1], [0, 1])", "descricao": "Reta identidade"}
 
 
 def test_ciclo_entrega_a_figura_ao_aluno(kb, banco, executor, tmp_path):

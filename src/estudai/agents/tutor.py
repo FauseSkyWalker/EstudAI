@@ -14,13 +14,25 @@ from estudai.domain.tutoria import TranscricaoTutoria, TurnoTutor
 _ORIENTACOES = {
     Disciplina.MATEMATICA: (
         "Explique a ideia antes do procedimento, mostre um exemplo numérico curto e destaque "
-        "armadilhas comuns de vestibular (sinais, domínio, casos particulares)."
+        "armadilhas comuns de vestibular (sinais, domínio, casos particulares). "
+        "Exemplos de conceitos visuais: gráficos de funções, parábolas com raízes e vértice, "
+        "árvores de probabilidade, diagramas de Venn e a reta numérica."
     ),
     Disciplina.FISICA: (
         "Parta do fenômeno físico, explicite grandezas e unidades, indique o referencial e só "
-        "então a equação; verifique a coerência dimensional e a ordem de grandeza."
+        "então a equação; verifique a coerência dimensional e a ordem de grandeza. "
+        "Exemplos de conceitos visuais: gráficos sxt e vxt, trajetórias de lançamento, "
+        "diagramas de corpo livre, planos inclinados e circuitos."
     ),
 }
+
+_REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visual, preencha `figura` com código
+  matplotlib curto (`plt` e `np` já estão importados; não use plt.show(), plt.savefig() nem
+  arquivos). Rotule eixos e unidades, destaque os pontos citados no texto e use números coerentes
+  com a explicação. A figura não pode revelar a resposta da pergunta de verificação; a `descricao`
+  deve dizer apenas o que é seguro mostrar. Deixe `figura` nulo quando o conceito não for visual
+  ou quando a figura repetir a anterior.
+"""
 
 SYSTEM = """Você é o Agente Tutor de {disciplina} de um sistema de tutoria para vestibulares brasileiros.
 Conduza a sessão em rodadas curtas, em português claro, adaptadas ao nível do aluno.
@@ -36,25 +48,30 @@ Regras:
   primeira rodada, retome em uma frase o que já foi visto; priorize os `proximos_passos` e os
   `erros_comuns`/`conceitos_com_erro` que se repetem; não reexplique do zero o que o aluno já
   dominou. Sem sessões anteriores, comece normalmente.
-- Figuras: o aluno vê imagens. Ao explicar pela primeira vez um conceito visual (gráfico de função,
-  parábola com raízes e vértice, gráficos s×t e v×t, trajetória de lançamento, diagrama de forças,
-  árvore de probabilidades), SEMPRE preencha `figura` com código matplotlib curto (`plt` e `np` já
-  importados; sem plt.show/savefig e sem arquivos), eixos rotulados e unidades, destacando os
-  pontos citados no texto e com números coerentes com a explicação. No máximo uma figura por
-  rodada; deixe `figura` nulo quando o conceito não for visual ou a figura repetir a anterior.
-"""
+{figuras}"""
 
 
 class Tutor(Agent):
     papel = Papel.TUTOR
 
     def __init__(
-        self, model: BaseChatModel, disciplina: Disciplina, *, usage_cb: BaseCallbackHandler | None = None, **kw
+        self,
+        model: BaseChatModel,
+        disciplina: Disciplina,
+        *,
+        usage_cb: BaseCallbackHandler | None = None,
+        figuras: bool = True,
+        **kw,
     ):
         super().__init__(model, usage_cb, **kw)
         self.disciplina = disciplina
         self._system = (
-            SYSTEM.format(disciplina=disciplina.value, orientacao=_ORIENTACOES[disciplina]) + ESPECIFICACAO_LATEX
+            SYSTEM.format(
+                disciplina=disciplina.value,
+                orientacao=_ORIENTACOES[disciplina],
+                figuras=_REGRA_FIGURAS if figuras else "",
+            )
+            + ESPECIFICACAO_LATEX
         )
 
     def proximo_turno(

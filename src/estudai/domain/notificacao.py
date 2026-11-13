@@ -19,4 +19,4 @@ class Notificacao(BaseModel):
     texto: str
     item_id: str | None = None
     correta: bool | None = None
-    figura: Figura | None = Field(default=None, exclude=True)  # ex.: figura da fala final do Tutor
+    figura: Figura | None = Field(default=None, exclude=True)
