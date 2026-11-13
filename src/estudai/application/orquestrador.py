@@ -40,10 +40,10 @@ from estudai.domain.questoes import Exercicio, OrigemItem, Particao
 from estudai.domain.tutoria import Encerramento, ResumoEstudo, TranscricaoTutoria, TrocaTutoria, TurnoTutor
 from estudai.orchestration.graph import build_cycle_graph
 from estudai.orchestration.state import CycleState
+from estudai.ports.figures import FigureRenderer
 from estudai.ports.knowledge import QuestionBank
 from estudai.ports.learner import Learner
 from estudai.ports.repositories import ProfileRepository
-from estudai.ports.tools import FigureRenderer
 
 
 @dataclass(frozen=True)

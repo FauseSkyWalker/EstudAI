@@ -10,7 +10,7 @@ from rich.prompt import Prompt
 
 from estudai.application.progresso import EventoProgresso, TipoProgresso
 from estudai.domain.correcao import RespostaAluno
-from estudai.domain.figura import Figura
+from estudai.domain.figura import Figura, FormatoFigura
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
@@ -34,6 +34,8 @@ class ConsoleLearner:
     def _mostrar_figura(self, figura: Figura | None) -> None:
         if figura is None:
             return
+        if figura.formato != FormatoFigura.PNG:
+            return  # Mermaid apenas na interface web
         if self._pasta_figuras is None:
             self._console.print(f"[magenta]🖼️  Figura: {figura.descricao}[/magenta]")
             return

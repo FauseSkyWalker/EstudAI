@@ -9,7 +9,7 @@ from test_orquestrador import montar
 from estudai.application.progresso import EventoProgresso, TipoProgresso
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
-from estudai.domain.figura import Figura
+from estudai.domain.figura import Figura, FormatoFigura
 from estudai.domain.notificacao import TipoNotificacao
 from estudai.domain.questoes import Exercicio
 from estudai.domain.tutoria import TurnoTutor
@@ -147,7 +147,7 @@ def test_tela_mostra_figura_do_tutor_e_bastidores(app):
         conceito_alvo="funcao_quadratica",
         explicacao="Veja a parábola.",
         pergunta_verificacao="Onde ficam as raízes?",
-        imagem=Figura(descricao="Parábola com raízes 1 e 3", png_base64=PNG_1PX),
+        imagem=Figura(descricao="Parábola com raízes 1 e 3", formato=FormatoFigura.PNG, conteudo=PNG_1PX),
     )
     sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
     sessao.learner._registrar(TipoEvento.TUTOR, turno)
@@ -162,3 +162,42 @@ def test_tela_mostra_figura_do_tutor_e_bastidores(app):
     legendas = " ".join(c.value for c in app.caption)
     assert "▶️ **Tutoria**" in legendas and "◻️ Relatório" in legendas  # faixa do pipeline
     assert any("Bastidores" in e.label for e in app.expander)
+
+
+def test_desenhar_figura_despacha_png_e_mermaid(monkeypatch):
+    from estudai.interfaces.web import figuras as web_figuras
+
+    chamadas = []
+    monkeypatch.setattr(web_figuras.st, "image", lambda *a, **k: chamadas.append(("image", a, k)))
+    monkeypatch.setattr(web_figuras.st, "mermaid_chart", lambda *a, **k: chamadas.append(("mermaid", a, k)))
+
+    web_figuras.desenhar_figura(Figura(descricao="Parábola", formato=FormatoFigura.PNG, conteudo=PNG_1PX))
+    web_figuras.desenhar_figura(
+        Figura(
+            descricao="Fluxo",
+            formato=FormatoFigura.MERMAID,
+            conteudo="flowchart TD\n  A --> B",
+        )
+    )
+
+    assert chamadas[0][0] == "image" and chamadas[0][2]["caption"] == "Parábola"
+    assert chamadas[1][0] == "mermaid" and chamadas[1][1][0].startswith("flowchart TD")
+    assert chamadas[1][2]["alt"] == "Fluxo"
+
+
+def test_tela_aceita_figura_mermaid(app):
+    turno = TurnoTutor(
+        conceito_alvo="funcao_afim",
+        explicacao="Veja o fluxo.",
+        pergunta_verificacao="Qual é o próximo passo?",
+        imagem=Figura(
+            descricao="Fluxo da função afim",
+            formato=FormatoFigura.MERMAID,
+            conteudo="flowchart TD\n  A[Função afim] --> B[Gráfico: reta]",
+        ),
+    )
+    sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
+    sessao.learner._registrar(TipoEvento.TUTOR, turno)
+    app.session_state["sessao"] = sessao
+    app.run()
+    assert not app.exception

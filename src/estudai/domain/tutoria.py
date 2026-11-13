@@ -27,7 +27,8 @@ class TurnoTutor(BaseModel):
         description=(
             "Opcional: um gráfico ou diagrama que ajude a explicação de forma visual, como, por exemplo, "
             "gráficos de funções, de cinemática, diagramas de forças e árvores de probabilidade. "
-            "Nulo quando não for apropriado ou necessário ao ensino."
+            "Escolha `tipo` grafico (matplotlib) ou diagrama (Mermaid). Nulo quando não for apropriado "
+            "ou necessário ao ensino."
         ),
     )
     # Preenchido pelo sistema depois de desenhar `figura` na sandbox. Fora do schema pedido ao LLM e

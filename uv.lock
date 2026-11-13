@@ -1000,7 +1000,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.7" },
     { name = "scipy", specifier = ">=1.13" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
-    { name = "streamlit", marker = "extra == 'web'", specifier = ">=1.40" },
+    { name = "streamlit", marker = "extra == 'web'", specifier = ">=1.66" },
     { name = "sympy", specifier = ">=1.12" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'embeddings') or (sys_platform == 'win32' and extra == 'embeddings')", specifier = ">=2.9", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "estudai", extra = "embeddings" } },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'embeddings'", specifier = ">=2.9" },

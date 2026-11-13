@@ -24,19 +24,21 @@ from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, 
 from estudai.application.telemetria import UsageLedger
 from estudai.application.validacao import PainelResolutores, ValidadorExercicios, VerificadorSimbolico
 from estudai.domain.curriculum import Disciplina
+from estudai.domain.figura import TipoFigura
 from estudai.domain.mensagens import Papel
+from estudai.infrastructure.figures import CompositeFigureRenderer, MatplotlibRenderer, MermaidRenderer
 from estudai.infrastructure.knowledge.database import KnowledgeDatabase
 from estudai.infrastructure.knowledge.embedders import SentenceTransformersEmbedder
 from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.infrastructure.llm.factory import build_chat_model
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
-from estudai.infrastructure.sandbox.figuras import MatplotlibRenderer
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
+from estudai.ports.figures import FigureRenderer
 from estudai.ports.knowledge import KnowledgeBase, QuestionBank
 from estudai.ports.llm import Embedder
 from estudai.ports.repositories import ProfileRepository
-from estudai.ports.tools import CodeExecutor, FigureRenderer
+from estudai.ports.tools import CodeExecutor
 from estudai.settings import ModelConfig, Settings
 
 FonteExercicios = Literal["gerado", "banco"]
@@ -162,8 +164,15 @@ class Container:
 
     @cached_property
     def figuras(self) -> FigureRenderer | None:
-        """Desenhista das figuras pedidas pelo Tutor (matplotlib na sandbox); None se desligado."""
-        return MatplotlibRenderer(timeout_s=self.settings.figuras_timeout_s) if self.settings.figuras else None
+        """Renderiza figuras do Tutor (matplotlib na sandbox e Mermaid). None se desligado."""
+        if not self.settings.figuras:
+            return None
+        return CompositeFigureRenderer(
+            {
+                TipoFigura.GRAFICO: MatplotlibRenderer(timeout_s=self.settings.figuras_timeout_s),
+                TipoFigura.DIAGRAMA: MermaidRenderer(),
+            }
+        )
 
     def dados_faltando(self) -> list[tuple[Path, str]]:
         """(arquivo ausente, comando que o gera) — para as interfaces falharem cedo, antes de gastar LLM."""

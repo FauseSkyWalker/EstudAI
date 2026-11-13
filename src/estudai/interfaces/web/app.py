@@ -12,6 +12,7 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.tutoria import TurnoTutor
 from estudai.interfaces.web.bastidores import faixa_pipeline, quadro_ao_vivo, registro_completo
+from estudai.interfaces.web.figuras import desenhar_figura
 from estudai.interfaces.web.markdown import markdown_latex
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
@@ -106,7 +107,7 @@ def desenhar_evento(evento: Evento) -> None:
                 st.caption(markdown_latex(turno.avaliacao_resposta_anterior))
             st.markdown(markdown_latex(turno.explicacao))
             if turno.imagem is not None:
-                st.image(turno.imagem.png, caption=turno.imagem.descricao)
+                desenhar_figura(turno.imagem)
             st.markdown(f"**{markdown_latex(turno.pergunta_verificacao)}**")
     elif evento.tipo == TipoEvento.ALUNO:
         with st.chat_message("user"):
@@ -139,7 +140,7 @@ def _desenhar_notificacao(notificacao: Notificacao) -> None:
         with st.chat_message("assistant", avatar="🧑‍🏫"):
             st.markdown(texto)
             if notificacao.figura is not None:
-                st.image(notificacao.figura.png, caption=notificacao.figura.descricao)
+                desenhar_figura(notificacao.figura)
     else:
         st.info(texto)
 

@@ -4,10 +4,16 @@ import pytest
 from fakes import FIGURA, RendererFalso, ScriptedLearner
 from test_orquestrador import T, montar
 
-from estudai.domain.figura import Figura, FiguraError, PedidoFigura
+from estudai.domain.figura import (
+    Figura,
+    FiguraError,
+    FormatoFigura,
+    PedidoFigura,
+    TipoFigura,
+)
 from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.tutoria import TranscricaoTutoria, TrocaTutoria, TurnoTutor
-from estudai.infrastructure.sandbox.figuras import MatplotlibRenderer
+from estudai.infrastructure.figures import CompositeFigureRenderer, MatplotlibRenderer, MermaidRenderer
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -68,6 +74,54 @@ def test_escrita_em_disco_e_bloqueada_inclusive_via_os(renderer, tmp_path):
     assert not arquivo.exists() and not pasta.exists()
 
 
+# --- mermaid -----------------------------------------------------------------------------
+
+
+DIAGRAMA = PedidoFigura(
+    tipo=TipoFigura.DIAGRAMA,
+    codigo="flowchart TD\n  A[Função afim] --> B[Gráfico: reta]",
+    descricao="Fluxo da função afim",
+)
+
+
+def test_mermaid_valido_vira_figura_de_diagrama():
+    figura = MermaidRenderer().render(DIAGRAMA)
+    assert figura.formato == FormatoFigura.MERMAID
+    assert figura.conteudo.startswith("flowchart TD")
+    assert figura.descricao == DIAGRAMA.descricao
+
+
+@pytest.mark.parametrize(
+    "fonte",
+    [
+        "A --> B",  # sem tipo de diagrama
+        'flowchart TD\n  click A href "https://example.com"',  # link
+        "flowchart TD\n  A[<script>alert(1)</script>]",  # HTML
+        "flowchart TD\n  A[javascript:alert(1)]",  # javascript:
+        "%%{init: {'theme': 'dark'}}%%\nflowchart TD\n  A --> B",  # diretiva
+    ],
+)
+def test_mermaid_invalido_vira_figura_error(fonte):
+    with pytest.raises(FiguraError):
+        MermaidRenderer().render(PedidoFigura(tipo=TipoFigura.DIAGRAMA, codigo=fonte, descricao="x"))
+
+
+def test_mermaid_rejeita_pedido_de_grafico():
+    with pytest.raises(FiguraError):
+        MermaidRenderer().render(PARABOLA)
+
+
+def test_composite_despacha_por_tipo():
+    composite = CompositeFigureRenderer(
+        {
+            TipoFigura.GRAFICO: RendererFalso(),
+            TipoFigura.DIAGRAMA: MermaidRenderer(),
+        }
+    )
+    assert composite.render(PARABOLA).formato == FormatoFigura.PNG
+    assert composite.render(DIAGRAMA).formato == FormatoFigura.MERMAID
+
+
 # --- domínio -----------------------------------------------------------------------------
 
 
@@ -80,7 +134,7 @@ def test_png_fica_fora_do_schema_do_modelo_e_dos_logs():
         explicacao="Veja o gráfico.",
         pergunta_verificacao="Quais as raízes?",
         figura=PARABOLA,
-        imagem=Figura(descricao=PARABOLA.descricao, png_base64="AAAA"),
+        imagem=Figura(descricao=PARABOLA.descricao, formato=FormatoFigura.PNG, conteudo="AAAA"),
     )
     assert "imagem" not in turno.model_dump() and "AAAA" not in turno.model_dump_json()
 

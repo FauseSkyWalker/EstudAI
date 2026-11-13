@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import PrivateAttr, ValidationError
 
 from estudai.domain.correcao import RespostaAluno
-from estudai.domain.figura import Figura, FiguraError, PedidoFigura
+from estudai.domain.figura import Figura, FiguraError, FormatoFigura, PedidoFigura
 from estudai.domain.notificacao import Notificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
@@ -175,7 +175,11 @@ class RendererFalso:
         self.pedidos.append(pedido)
         if self.falha:
             raise FiguraError("código inválido")
-        return Figura(descricao=pedido.descricao, png_base64="iVBORw0KGgo=")
+        return Figura(
+            descricao=pedido.descricao,
+            formato=FormatoFigura.PNG,
+            conteudo="iVBORw0KGgo=",
+        )
 
 
-FIGURA = {"codigo": "plt.plot([0, 1], [0, 1])", "descricao": "Reta identidade"}
+FIGURA = {"tipo": "grafico", "codigo": "plt.plot([0, 1], [0, 1])", "descricao": "Reta identidade"}

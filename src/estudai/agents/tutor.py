@@ -26,12 +26,15 @@ _ORIENTACOES = {
     ),
 }
 
-_REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visual, preencha `figura` com código
-  matplotlib curto (`plt` e `np` já estão importados; não use plt.show(), plt.savefig() nem
-  arquivos). Rotule eixos e unidades, destaque os pontos citados no texto e use números coerentes
-  com a explicação. A figura não pode revelar a resposta da pergunta de verificação; a `descricao`
-  deve dizer apenas o que é seguro mostrar. Deixe `figura` nulo quando o conceito não for visual
-  ou quando a figura repetir a anterior.
+_REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visual, preencha `figura` com um pedido curto:
+  - `tipo="grafico"` para gráficos quantitativos e desenhos físicos. Escreva código matplotlib
+    (`plt` e `np` já estão importados; não use plt.show(), plt.savefig() nem arquivos), com eixos
+    rotulados e unidades.
+  - `tipo="diagrama"` para diagramas conceituais. Escreva fonte Mermaid (flowchart, mindmap, timeline,
+    stateDiagram ou classDiagram), com rótulos curtos e sem links/cliques.
+  Use no máximo uma figura por rodada, com números coerentes com a explicação. A figura não pode
+  revelar a resposta da pergunta de verificação; a `descricao` deve dizer apenas o que é seguro
+  mostrar. Deixe `figura` nulo quando o conceito não for visual ou quando a figura repetir a anterior.
 """
 
 SYSTEM = """Você é o Agente Tutor de {disciplina} de um sistema de tutoria para vestibulares brasileiros.

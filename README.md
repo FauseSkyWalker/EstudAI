@@ -25,7 +25,7 @@ application/ ──► agents/ ──► ports/ ──► domain/
 | Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `FigureRenderer`, `Learner` | domínio |
 | Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
 | Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
-| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), ingestão | portas (implementa) |
+| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão | portas (implementa) |
 | Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
 | Interfaces | `interfaces/` | CLI (`typer`), aluno no terminal e web (Streamlit) | bootstrap |
 
@@ -157,11 +157,17 @@ desliga. O terminal não exibe imagens: as figuras do Tutor são salvas em
 
 ### Figuras dos agentes
 
-O Tutor pode pedir uma figura junto com a explicação: ele escreve um código matplotlib curto, que
-roda na mesma **sandbox** da verificação simbólica (subprocesso isolado, sem rede, com escrita em
-disco bloqueada pelo audit hook e com tempo limite) e volta como PNG. A leitura de arquivos não é
-bloqueada. Se o código falhar, a rodada segue só com o texto e a figura é descartada. A transcrição
-(lida pelo Resumo e pelos juízes) registra a legenda da figura, nunca a imagem. Para desligar:
+O Tutor pode pedir uma figura junto com a explicação. Há dois tipos:
+
+- **gráfico**: código matplotlib curto, que roda na mesma **sandbox** da verificação simbólica
+  (subprocesso isolado, sem rede, com escrita em disco bloqueada pelo audit hook e com tempo
+  limite) e volta como PNG. A leitura de arquivos não é bloqueada.
+- **diagrama**: fonte Mermaid (fluxograma, mapa mental, linha do tempo etc.), renderizada
+  nativamente pelo Streamlit. No terminal, diagramas Mermaid não são exibidos nem salvos; use a
+  interface web.
+
+Se o código falhar, a rodada segue só com o texto e a figura é descartada. A transcrição (lida pelo
+Resumo e pelos juízes) registra a legenda da figura, nunca a imagem. Para desligar:
 `ESTUDAI_FIGURAS=false` no `.env`.
 
 ## Experimento (Seção 5.3)
