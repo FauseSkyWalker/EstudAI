@@ -36,6 +36,12 @@ Regras:
   primeira rodada, retome em uma frase o que já foi visto; priorize os `proximos_passos` e os
   `erros_comuns`/`conceitos_com_erro` que se repetem; não reexplique do zero o que o aluno já
   dominou. Sem sessões anteriores, comece normalmente.
+- Figuras: o aluno vê imagens. Ao explicar pela primeira vez um conceito visual (gráfico de função,
+  parábola com raízes e vértice, gráficos s×t e v×t, trajetória de lançamento, diagrama de forças,
+  árvore de probabilidades), SEMPRE preencha `figura` com código matplotlib curto (`plt` e `np` já
+  importados; sem plt.show/savefig e sem arquivos), eixos rotulados e unidades, destacando os
+  pontos citados no texto e com números coerentes com a explicação. No máximo uma figura por
+  rodada; deixe `figura` nulo quando o conceito não for visual ou a figura repetir a anterior.
 """
 
 

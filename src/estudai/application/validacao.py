@@ -7,6 +7,7 @@ Regra de aprovação (critério de sucesso 1, Seção 5.1):
 - verificação INCONCLUSIVA          -> aprova se concordância >= `min_concordancia_sem_verificacao`.
 """
 
+import contextvars
 import math
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -124,7 +125,10 @@ class PainelResolutores:
                 return None
 
         with ThreadPoolExecutor(max_workers=len(self._resolutores)) as pool:
-            votos = list(pool.map(resolver, self._resolutores))
+            # cada thread recebe uma cópia do contexto: assim os callbacks herdados da execução do grafo
+            # (ex.: o acompanhamento de progresso) também enxergam as chamadas dos resolutores
+            tarefas = [pool.submit(contextvars.copy_context().run, resolver, r) for r in self._resolutores]
+            votos = [t.result() for t in tarefas]
         return [v for v in votos if v is not None]
 
     @property

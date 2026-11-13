@@ -31,11 +31,12 @@ from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.infrastructure.llm.factory import build_chat_model
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
+from estudai.infrastructure.sandbox.figuras import MatplotlibRenderer
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 from estudai.ports.knowledge import KnowledgeBase, QuestionBank
 from estudai.ports.llm import Embedder
 from estudai.ports.repositories import ProfileRepository
-from estudai.ports.tools import CodeExecutor
+from estudai.ports.tools import CodeExecutor, FigureRenderer
 from estudai.settings import ModelConfig, Settings
 
 FonteExercicios = Literal["gerado", "banco"]
@@ -159,6 +160,11 @@ class Container:
     def executor(self) -> CodeExecutor:
         return SubprocessPythonExecutor(timeout_s=self.settings.sandbox_timeout_s)
 
+    @cached_property
+    def figuras(self) -> FigureRenderer | None:
+        """Desenhista das figuras pedidas pelo Tutor (matplotlib na sandbox); None se desligado."""
+        return MatplotlibRenderer() if self.settings.figuras else None
+
     def dados_faltando(self) -> list[tuple[Path, str]]:
         """(arquivo ausente, comando que o gera) — para as interfaces falharem cedo, antes de gastar LLM."""
         s = self.settings
@@ -220,4 +226,5 @@ class Container:
             banco=self.banco,
             config=config,
             ledger=self.ledger,
+            figuras=self.figuras,
         )

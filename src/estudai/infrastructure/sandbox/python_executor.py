@@ -17,12 +17,14 @@ import tempfile
 
 from estudai.ports.tools import ExecutionResult
 
-_PRELUDIO = r"""
+_PRELUDIO_INICIO = r"""
 import sys as _sys, random as _random
 _random.seed(0)
 # bibliotecas confiáveis são importadas ANTES do hook (o sympy usa ctypes ao carregar no Windows)
 import math, fractions, sympy
+"""
 
+_PRELUDIO_GUARDA = r"""
 _BLOQUEADOS = ("socket.", "subprocess.", "os.system", "os.exec", "os.spawn", "os.posix_spawn",
                "os.fork", "os.remove", "os.unlink", "os.rmdir", "os.rename", "shutil.",
                "ctypes.", "urllib.", "http.", "ftplib.", "smtplib.", "webbrowser.", "winreg.")
@@ -39,17 +41,31 @@ _MAX_SAIDA = 20_000
 
 
 class SubprocessPythonExecutor:
-    def __init__(self, *, timeout_s: float = 10.0, python: str = sys.executable) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_s: float = 10.0,
+        python: str = sys.executable,
+        preludio_confiavel: str = "",
+        env_extra: dict[str, str] | None = None,
+        max_saida: int = _MAX_SAIDA,
+    ) -> None:
+        """`preludio_confiavel` roda ANTES do bloqueio (ex.: importar o matplotlib, que grava o cache
+        de fontes ao carregar); o código recebido roda depois, já bloqueado. `max_saida` limita stdout/stderr."""
         self._timeout_s = timeout_s
         self._python = python
+        self._preludio = _PRELUDIO_INICIO + preludio_confiavel + "\n" + _PRELUDIO_GUARDA
+        self._env_extra = env_extra or {}
+        self._max_saida = max_saida
 
     def run(self, code: str, timeout_s: float | None = None) -> ExecutionResult:
         env = {k: v for k, v in os.environ.items() if k.upper() in {"SYSTEMROOT", "PATH", "TEMP", "TMP"}}
+        env.update(self._env_extra)
         with tempfile.TemporaryDirectory(prefix="estudai-sandbox-") as cwd:
             try:
                 proc = subprocess.run(
                     [self._python, "-I", "-B", "-"],
-                    input=_PRELUDIO + "\n" + code,
+                    input=self._preludio + "\n" + code,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -62,6 +78,6 @@ class SubprocessPythonExecutor:
                 return ExecutionResult(ok=False, timed_out=True, stderr="tempo limite excedido")
         return ExecutionResult(
             ok=proc.returncode == 0,
-            stdout=proc.stdout[-_MAX_SAIDA:],
-            stderr=proc.stderr[-_MAX_SAIDA:],
+            stdout=proc.stdout[-self._max_saida :],
+            stderr=proc.stderr[-self._max_saida :],
         )

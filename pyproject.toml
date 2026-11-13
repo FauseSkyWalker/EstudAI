@@ -25,6 +25,8 @@ dependencies = [
     "google-genai>=1.0",
     "langchain-text-splitters>=0.3",
     "mathml-to-latex>=1.0.0",
+    # figuras geradas pelos agentes (renderizadas na sandbox, backend Agg)
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]

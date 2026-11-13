@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from test_orquestrador import montar
 
+from estudai.application.progresso import EventoProgresso, TipoProgresso
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
+from estudai.domain.figura import Figura
 from estudai.domain.notificacao import TipoNotificacao
 from estudai.domain.questoes import Exercicio
 from estudai.domain.tutoria import TurnoTutor
@@ -51,6 +53,10 @@ def test_ciclo_completo_pela_ponte(kb, banco, executor, tmp_path):
     assert any(
         e.tipo == TipoEvento.NOTIFICACAO and e.conteudo.tipo == TipoNotificacao.RESUMO for e in eventos
     )  # resumo
+    # bastidores: o que cada agente fez fica disponível para a tela
+    progresso = sessao.progresso()
+    assert {e.etapa for e in progresso if e.tipo == TipoProgresso.ETAPA} >= {"tutor", "practice"}
+    assert any(e.agente == "Tutor" and e.tipo == TipoProgresso.PENSANDO for e in progresso)
 
 
 def test_encerrar_sessao_libera_a_thread(kb, banco, executor, tmp_path):
@@ -77,12 +83,16 @@ class SessaoFalsa:
         self.aluno_id, self.topico, self.learner = "ana", Topico.FUNCOES, WebLearner()
         self.learner._pendente = pedido
         self.resultado = self.erro = None
+        self.eventos_progresso = []
 
     @property
     def estado(self) -> EstadoSessao:
         return EstadoSessao.AGUARDANDO_ALUNO if self.learner.pendente else EstadoSessao.TRABALHANDO
 
     def cancelar(self) -> None: ...
+
+    def progresso(self) -> list:
+        return self.eventos_progresso
 
 
 @pytest.fixture
@@ -127,3 +137,28 @@ def test_tela_envia_resposta_ao_tutor(app):
     app.run()
     app.chat_input[0].set_value("em -b/2a").run()
     assert sessao.learner._respostas.get_nowait() == "em -b/2a"
+
+
+PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+def test_tela_mostra_figura_do_tutor_e_bastidores(app):
+    turno = TurnoTutor(
+        conceito_alvo="funcao_quadratica",
+        explicacao="Veja a parábola.",
+        pergunta_verificacao="Onde ficam as raízes?",
+        imagem=Figura(descricao="Parábola com raízes 1 e 3", png_base64=PNG_1PX),
+    )
+    sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
+    sessao.learner._registrar(TipoEvento.TUTOR, turno)
+    sessao.eventos_progresso = [
+        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"),
+        EventoProgresso(tipo=TipoProgresso.PENSANDO, descricao="está pensando", etapa="tutor", agente="Tutor"),
+    ]
+    app.session_state["sessao"] = sessao
+    app.run()
+    assert not app.exception
+    assert len(app.get("image")) == 1
+    legendas = " ".join(c.value for c in app.caption)
+    assert "▶️ **Tutoria**" in legendas and "◻️ Relatório" in legendas  # faixa do pipeline
+    assert any("Bastidores" in e.label for e in app.expander)

@@ -33,7 +33,7 @@ def _letra_da(request, texto: str) -> str:
     return re.search(rf"^([A-E])\) {re.escape(texto)}$", prompt, re.MULTILINE).group(1)
 
 
-def handlers(corretor_suspeita: bool = False, voto_painel: str = "5") -> dict:
+def handlers(corretor_suspeita: bool = False, voto_painel: str = "5", figura: dict | None = None) -> dict:
     """`voto_painel` é o TEXTO da alternativa em que o painel vota: as alternativas geradas são
     embaralhadas, então o painel (como o real) resolve pelo conteúdo, não por uma letra fixa."""
 
@@ -48,6 +48,7 @@ def handlers(corretor_suspeita: bool = False, voto_painel: str = "5") -> dict:
             "pergunta_verificacao": "Onde fica o vértice de x² - 4x?",
             "conceitos_validados": [] if primeira else alvo,
             "objetivo_atingido": not primeira,
+            "figura": figura if primeira else None,
         }
 
     return {
@@ -107,6 +108,7 @@ def montar(
     config=None,
     fonte="gerado",
     voto_revalidacao="5",
+    figuras=None,
     **kw,
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
@@ -138,6 +140,7 @@ def montar(
         banco=banco,
         config=config,
         ledger=ledger,
+        figuras=figuras,
     )
     return orq, perfis
 

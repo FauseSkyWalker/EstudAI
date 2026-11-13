@@ -8,11 +8,13 @@ perfil -> relatório -> memória episódica. Com `adaptativo=False` (condição 
 congelado: não há diagnóstico, atualização nem memória, e todos os agentes enxergam sempre o mesmo estado.
 """
 
+import contextlib
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 
+from langchain_core.callbacks.manager import dispatch_custom_event
 from pydantic import BaseModel
 
 from estudai.agents.base import AgentOutputError
@@ -23,10 +25,12 @@ from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
 from estudai.application.mensageria import MessageLog
 from estudai.application.pratica import ExerciseProvider, ResultadoFornecimento
+from estudai.application.progresso import EVENTO_FIGURA, ObservadorProgresso, ProgressoCallback
 from estudai.application.telemetria import UsageLedger, UsageSummary
 from estudai.application.validacao import ValidadorExercicios
 from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
 from estudai.domain.curriculum import Disciplina, Topico
+from estudai.domain.figura import FiguraError
 from estudai.domain.material import PacoteMaterial
 from estudai.domain.memoria import registrar_episodio
 from estudai.domain.mensagens import Mensagem, Papel, TipoMensagem
@@ -34,12 +38,13 @@ from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.perfil import Diagnostico, PerfilAluno, RegistroErro
 from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.questoes import Exercicio, OrigemItem, Particao
-from estudai.domain.tutoria import Encerramento, ResumoEstudo, TranscricaoTutoria, TrocaTutoria
+from estudai.domain.tutoria import Encerramento, ResumoEstudo, TranscricaoTutoria, TrocaTutoria, TurnoTutor
 from estudai.orchestration.graph import build_cycle_graph
 from estudai.orchestration.state import CycleState
 from estudai.ports.knowledge import QuestionBank
 from estudai.ports.learner import Learner
 from estudai.ports.repositories import ProfileRepository
+from estudai.ports.tools import FigureRenderer
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,7 @@ class Orquestrador:
         banco: QuestionBank,
         config: ConfigSessao | None = None,
         ledger: UsageLedger | None = None,
+        figuras: FigureRenderer | None = None,
     ) -> None:
         self._diagnosticador = diagnosticador
         self._tutores = tutores
@@ -100,6 +106,7 @@ class Orquestrador:
         self._banco = banco
         self._config = config or ConfigSessao()
         self._ledger = ledger or UsageLedger()
+        self._figuras = figuras  # None = o Tutor não desenha figuras
 
     @property
     def config(self) -> ConfigSessao:
@@ -109,12 +116,20 @@ class Orquestrador:
     def _graph(self):
         return build_cycle_graph(self)
 
-    def executar_ciclo(self, aluno_id: str, topico: Topico, aluno: Learner) -> ResultadoCiclo:
+    def executar_ciclo(
+        self,
+        aluno_id: str,
+        topico: Topico,
+        aluno: Learner,
+        observador: ObservadorProgresso | None = None,
+    ) -> ResultadoCiclo:
+        """`observador` recebe, em tempo real, o que cada agente está fazendo (ver `application.progresso`)."""
         start = time.perf_counter()
         mark = self._ledger.mark()
         message_log = MessageLog()
+        config = {"callbacks": [ProgressoCallback(observador)]} if observador else None
         state: CycleState = self._graph.invoke(
-            {"student_id": aluno_id, "topic": topico, "learner": aluno, "log": message_log}
+            {"student_id": aluno_id, "topic": topico, "learner": aluno, "log": message_log}, config=config
         )
 
         return ResultadoCiclo(
@@ -213,12 +228,13 @@ class Orquestrador:
             except AgentOutputError:
                 transcricao.encerramento = Encerramento.FALHA
                 break
+            turno = self._draw_figure(turno)
             log.send(Papel.TUTOR, Papel.ALUNO, TipoMensagem.TUTORIA, turno, referencias=material.referencias)
             concluido = turno.objetivo_atingido or alvo <= set(
                 transcricao.conceitos_validados + turno.conceitos_validados
             )
             if concluido:
-                aluno.notify(Notificacao(tipo=TipoNotificacao.TUTORIA, texto=turno.explicacao))
+                aluno.notify(Notificacao(tipo=TipoNotificacao.TUTORIA, texto=turno.explicacao, figura=turno.imagem))
                 transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno))
                 transcricao.encerramento = Encerramento.OBJETIVO_ATINGIDO
                 break
@@ -226,6 +242,19 @@ class Orquestrador:
             log.send(Papel.ALUNO, Papel.TUTOR, TipoMensagem.RESPOSTA, {"texto": resposta})
             transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno, resposta_aluno=resposta))
         return transcricao
+
+    def _draw_figure(self, turno: TurnoTutor) -> TurnoTutor:
+        """Desenha a figura pedida pelo Tutor na sandbox. Se falhar, a rodada segue só com o texto
+        (e o pedido é descartado, para a transcrição não citar uma figura que o aluno não viu)."""
+        if turno.figura is None or self._figuras is None:
+            return turno.model_copy(update={"figura": None}) if turno.figura else turno
+        _avisar_progresso({"agente": "Tutor", "descricao": f"desenhando figura: {turno.figura.descricao}"})
+        try:
+            figura = self._figuras.render(turno.figura)
+        except FiguraError as exc:
+            _avisar_progresso({"agente": "Tutor", "descricao": f"figura descartada ({str(exc)[:120]})"})
+            return turno.model_copy(update={"figura": None})
+        return turno.model_copy(update={"imagem": figura})
 
     def _summarize_tutoring(
         self, transcricao: TranscricaoTutoria, material: PacoteMaterial, aluno: Learner, log: MessageLog
@@ -398,3 +427,10 @@ def _format_summary(resumo: ResumoEstudo) -> str:
     if resumo.formulas:
         partes += ["Fórmulas:", *[f"  {f}" for f in resumo.formulas]]
     return "\n".join(partes)
+
+
+def _avisar_progresso(dados: dict) -> None:
+    """Evento customizado para o `ProgressoCallback` (só há quem ouça dentro de uma execução do grafo)."""
+    # fora de uma execução do LangChain (ex.: chamada direta em testes) não há quem ouça
+    with contextlib.suppress(RuntimeError):
+        dispatch_custom_event(EVENTO_FIGURA, dados)

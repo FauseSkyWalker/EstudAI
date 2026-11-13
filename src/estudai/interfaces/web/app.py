@@ -11,6 +11,7 @@ from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.tutoria import TurnoTutor
+from estudai.interfaces.web.bastidores import faixa_pipeline, quadro_ao_vivo, registro_completo
 from estudai.interfaces.web.markdown import markdown_latex
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
@@ -104,6 +105,8 @@ def desenhar_evento(evento: Evento) -> None:
             if turno.avaliacao_resposta_anterior:
                 st.caption(markdown_latex(turno.avaliacao_resposta_anterior))
             st.markdown(markdown_latex(turno.explicacao))
+            if turno.imagem is not None:
+                st.image(turno.imagem.png, caption=turno.imagem.descricao)
             st.markdown(f"**{markdown_latex(turno.pergunta_verificacao)}**")
     elif evento.tipo == TipoEvento.ALUNO:
         with st.chat_message("user"):
@@ -135,6 +138,8 @@ def _desenhar_notificacao(notificacao: Notificacao) -> None:
     elif notificacao.tipo == TipoNotificacao.TUTORIA:  # fechamento do tutor
         with st.chat_message("assistant", avatar="🧑‍🏫"):
             st.markdown(texto)
+            if notificacao.figura is not None:
+                st.image(notificacao.figura.png, caption=notificacao.figura.descricao)
     else:
         st.info(texto)
 
@@ -177,10 +182,11 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
 
 @st.fragment(run_every=1.0)
 def aguardar_agentes(sessao: SessaoWeb, eventos_vistos: int) -> None:
-    """Enquanto os agentes trabalham, verifica o estado a cada segundo e redesenha quando muda."""
+    """Enquanto os agentes trabalham, mostra ao vivo quem está fazendo o quê (redesenhado a cada
+    segundo) e redesenha a página inteira quando a conversa muda."""
     if sessao.estado != EstadoSessao.TRABALHANDO or len(sessao.learner.eventos()) != eventos_vistos:
         st.rerun()
-    st.caption("⏳ Os agentes estão trabalhando…")
+    quadro_ao_vivo(sessao.progresso())
 
 
 def resultado(sessao: SessaoWeb) -> None:
@@ -212,8 +218,12 @@ def resultado(sessao: SessaoWeb) -> None:
 
 def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
     st.header(f"{TOPICOS[sessao.topico]} · {sessao.aluno_id}")
-    ultima_fase = historico(sessao)
     estado = sessao.estado
+    em_andamento = estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO)
+    faixa_pipeline(sessao.progresso(), em_andamento)
+    ultima_fase = historico(sessao)
+    if estado != EstadoSessao.TRABALHANDO:  # trabalhando, o quadro ao vivo já mostra os bastidores
+        registro_completo(sessao.progresso())
     if estado == EstadoSessao.AGUARDANDO_ALUNO:
         pedir_resposta(sessao, sessao.learner.pendente, ultima_fase)
     elif estado == EstadoSessao.TRABALHANDO:

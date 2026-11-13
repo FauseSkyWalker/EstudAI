@@ -22,12 +22,12 @@ application/ ──► agents/ ──► ports/ ──► domain/
 | Camada | Pasta | Responsabilidade | Depende de |
 |---|---|---|---|
 | Domínio | `domain/` | Entidades e regras puras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens | — |
-| Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `Learner` | domínio |
+| Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `FigureRenderer`, `Learner` | domínio |
 | Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
-| Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens | agentes, domínio, portas |
-| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox, ingestão | portas (implementa) |
+| Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
+| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), ingestão | portas (implementa) |
 | Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
-| Interfaces | `interfaces/` | CLI (`typer`) e aluno no terminal | bootstrap |
+| Interfaces | `interfaces/` | CLI (`typer`), aluno no terminal e web (Streamlit) | bootstrap |
 
 Consequências práticas:
 - **Trocar de fornecedor de LLM** = um adaptador novo em `infrastructure/llm/` + uma linha em `bootstrap.py`.
@@ -124,8 +124,12 @@ uv run estudai web --porta 8502    # se a porta estiver ocupada
 
 1. Na barra lateral, digite seu nome (identifica o perfil) e escolha o tópico.
 2. Clique em **Iniciar sessão**. As questões aparecem como formulário (alternativas + resolução
-   opcional) e a tutoria como chat; enquanto os agentes trabalham, a tela mostra
-   "⏳ Os agentes estão trabalhando…" e se atualiza sozinha.
+   opcional) e a tutoria como chat. Quando ajuda, o Tutor anexa uma **figura** (gráfico de função,
+   s×t/v×t, trajetória, diagrama de forças…) logo abaixo da explicação.
+   Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: a faixa do pipeline
+   (✅ etapas concluídas, ▶️ etapa atual) e um quadro com quem está pensando e o que está fazendo
+   (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da parábola”"). Ao fim de cada
+   etapa, o painel **🔍 Bastidores** guarda o registro completo do ciclo.
 3. No fim do ciclo aparecem acertos, nível estimado, relatório e custo; **Novo ciclo** continua no
    mesmo tópico, já adaptado ao que você errou.
 
@@ -146,6 +150,18 @@ uv run estudai perfil ana                             # histórico de versões d
 
 Responda às perguntas do tutor digitando e às questões com a letra da alternativa. **Ctrl+C**
 interrompe (no PowerShell, Ctrl+Z não funciona).
+
+Os bastidores aparecem como linhas discretas (etapa atual, agente e ação); `--no-bastidores`
+desliga. O terminal não exibe imagens: as figuras do Tutor são salvas em
+`data/figuras/<aluno>/` e o caminho do arquivo é impresso para você abrir.
+
+### Figuras dos agentes
+
+O Tutor pode pedir uma figura junto com a explicação: ele escreve um código matplotlib curto, que
+roda na mesma **sandbox** da verificação simbólica (subprocesso isolado, sem rede, sem gravar
+arquivos, com tempo limite) e volta como PNG. Se o código falhar, a rodada segue só com o texto e
+a figura é descartada. A transcrição (lida pelo Resumo e pelos juízes) registra a legenda da
+figura, nunca a imagem. Para desligar: `ESTUDAI_FIGURAS=false` no `.env`.
 
 ## Experimento (Seção 5.3)
 

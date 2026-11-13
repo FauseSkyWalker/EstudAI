@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any
 
 from estudai.application.orquestrador import Orquestrador, ResultadoCiclo
+from estudai.application.progresso import EventoProgresso
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao
@@ -143,6 +144,8 @@ class SessaoWeb:
         self.resultado: ResultadoCiclo | None = None
         self.erro: str | None = None
         self._cancelada = False
+        self._progresso: list[EventoProgresso] = []  # bastidores: o que cada agente está fazendo
+        self._lock_progresso = threading.Lock()
         self._orquestrador = orquestrador
         self._thread = threading.Thread(target=self._rodar, name=f"ciclo-{aluno_id}", daemon=True)
 
@@ -157,6 +160,15 @@ class SessaoWeb:
     def aguardar(self, timeout: float | None = None) -> None:
         self._thread.join(timeout)
 
+    def progresso(self) -> list[EventoProgresso]:
+        with self._lock_progresso:
+            return list(self._progresso)
+
+    def _registrar_progresso(self, evento: EventoProgresso) -> None:
+        # chamado pela thread do ciclo e pelas threads do painel de resolutores
+        with self._lock_progresso:
+            self._progresso.append(evento)
+
     @property
     def estado(self) -> EstadoSessao:
         if self._thread.is_alive():
@@ -167,7 +179,9 @@ class SessaoWeb:
 
     def _rodar(self) -> None:
         try:
-            self.resultado = self._orquestrador.executar_ciclo(self.aluno_id, self.topico, self.learner)
+            self.resultado = self._orquestrador.executar_ciclo(
+                self.aluno_id, self.topico, self.learner, observador=self._registrar_progresso
+            )
         except SessaoCancelada:
             self._cancelada = True
         except Exception as exc:  # noqa: BLE001 - o erro é mostrado na tela, não pode morrer calado

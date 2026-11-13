@@ -1,6 +1,8 @@
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from estudai.domain.figura import Figura
 
 
 class TipoNotificacao(StrEnum):
@@ -17,3 +19,4 @@ class Notificacao(BaseModel):
     texto: str
     item_id: str | None = None
     correta: bool | None = None
+    figura: Figura | None = Field(default=None, exclude=True)  # ex.: figura da fala final do Tutor

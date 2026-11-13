@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 180.0
     llm_max_attempts: int = 4
     sandbox_timeout_s: float = 10.0
+    # o Tutor pode anexar gráficos/diagramas (matplotlib na sandbox); false desliga
+    figuras: bool = True
 
     # Limites de execução
     kb_k: int = 4

@@ -1,24 +1,53 @@
 """Aluno real interagindo pelo terminal: implementa a porta `Learner`."""
 
+from datetime import datetime
+from pathlib import Path
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
+from estudai.application.progresso import EventoProgresso, TipoProgresso
 from estudai.domain.correcao import RespostaAluno
+from estudai.domain.figura import Figura
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.questoes import ItemObjetivo
 from estudai.domain.tutoria import TurnoTutor
 
 
 class ConsoleLearner:
-    def __init__(self, console: Console | None = None) -> None:
+    def __init__(self, console: Console | None = None, pasta_figuras: Path | None = None) -> None:
+        """`pasta_figuras`: onde salvar as figuras do Tutor (o terminal não exibe imagens)."""
         self._console = console or Console()
+        self._pasta_figuras = pasta_figuras
+        self._figuras_salvas = 0
+
+    def bastidores(self, evento: EventoProgresso) -> None:
+        """Observador de progresso: uma linha discreta por ação dos agentes."""
+        if evento.tipo == TipoProgresso.ETAPA:
+            self._console.print(f"[dim]── {evento.descricao}[/dim]")
+        elif evento.tipo != TipoProgresso.RESPONDEU:
+            quem = f"{evento.agente} " if evento.agente else ""
+            self._console.print(f"[dim]   {quem}{evento.descricao}[/dim]")
+
+    def _mostrar_figura(self, figura: Figura | None) -> None:
+        if figura is None:
+            return
+        if self._pasta_figuras is None:
+            self._console.print(f"[magenta]🖼️  Figura: {figura.descricao}[/magenta]")
+            return
+        self._pasta_figuras.mkdir(parents=True, exist_ok=True)
+        self._figuras_salvas += 1
+        arquivo = self._pasta_figuras / f"figura-{datetime.now():%Y%m%d-%H%M%S}-{self._figuras_salvas}.png"
+        arquivo.write_bytes(figura.png)
+        self._console.print(f"[magenta]🖼️  {figura.descricao} → abra a imagem: {arquivo.resolve()}[/magenta]")
 
     def reply_to_tutor(self, turno: TurnoTutor) -> str:
         if turno.avaliacao_resposta_anterior:
             self._console.print(Panel(turno.avaliacao_resposta_anterior, title="Sobre sua resposta", style="cyan"))
         self._console.print(Panel(Markdown(turno.explicacao), title=f"Tutor · {turno.conceito_alvo}"))
+        self._mostrar_figura(turno.imagem)
         self._console.print(f"[bold]{turno.pergunta_verificacao}[/bold]")
         return Prompt.ask("Sua resposta")
 
@@ -38,3 +67,4 @@ class ConsoleLearner:
             titulo = notificacao.tipo.value
             estilo = "yellow" if notificacao.tipo in (TipoNotificacao.ITEM_REMOVIDO, TipoNotificacao.AVISO) else "green"
         self._console.print(Panel(Markdown(notificacao.texto), title=titulo, style=estilo))
+        self._mostrar_figura(notificacao.figura)

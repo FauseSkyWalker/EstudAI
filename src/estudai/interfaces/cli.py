@@ -131,6 +131,7 @@ def estudar(
     aluno: Annotated[str, typer.Option(help="Identificador do aluno")],
     topico: Annotated[Topico, typer.Option()],
     ciclos: int = 1,
+    bastidores: Annotated[bool, typer.Option(help="Mostra o que cada agente está fazendo")] = True,
 ) -> None:
     """Sessão interativa de tutoria + prática no terminal."""
     from estudai.interfaces.console import ConsoleLearner
@@ -138,10 +139,11 @@ def estudar(
     container = _container()
     _exigir_dados(container)
     orquestrador = container.orquestrador()
-    learner = ConsoleLearner(console)
+    learner = ConsoleLearner(console, pasta_figuras=container.settings.data_dir / "figuras" / aluno)
     for i in range(1, ciclos + 1):
         console.rule(f"Ciclo {i} · {topico.value}")
-        resultado = orquestrador.executar_ciclo(aluno, topico, learner)
+        observador = learner.bastidores if bastidores else None
+        resultado = orquestrador.executar_ciclo(aluno, topico, learner, observador=observador)
         console.print(
             f"Perfil v{resultado.versao_perfil_inicial} → v{resultado.versao_perfil_final} · "
             f"acertos {sum(c.correta for c in resultado.correcoes)}/{len(resultado.correcoes)} · "

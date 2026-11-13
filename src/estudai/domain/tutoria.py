@@ -3,8 +3,10 @@
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from estudai.domain.curriculum import conceitos_validos
+from estudai.domain.figura import Figura, PedidoFigura
 from estudai.domain.planejamento import ObjetivoSessao
 
 
@@ -20,6 +22,16 @@ class TurnoTutor(BaseModel):
         description="Conceitos cujo entendimento o aluno já demonstrou nesta sessão.",
     )
     objetivo_atingido: bool = False
+    figura: PedidoFigura | None = Field(
+        default=None,
+        description=(
+            "Opcional: um gráfico ou diagrama que ajude a explicação (gráfico de função, parábola e vértice, "
+            "gráfico s×t ou v×t, diagrama de forças, árvore de probabilidades). Null quando não ajudar."
+        ),
+    )
+    # Preenchido pelo sistema depois de desenhar `figura` na sandbox. Fora do schema pedido ao LLM e
+    # fora dos dumps (logs/mensagens), porque o PNG é pesado.
+    imagem: SkipJsonSchema[Figura | None] = Field(default=None, exclude=True)
 
 
 class TrocaTutoria(BaseModel):
@@ -50,6 +62,8 @@ class TranscricaoTutoria(BaseModel):
             if t.turno.avaliacao_resposta_anterior:
                 linhas.append(f"TUTOR (avaliação): {t.turno.avaliacao_resposta_anterior}")
             linhas.append(f"TUTOR [{t.turno.conceito_alvo}]: {t.turno.explicacao}")
+            if t.turno.figura:  # juízes e resumo sabem que houve uma figura e o que ela mostrava
+                linhas.append(f"TUTOR (figura): {t.turno.figura.descricao}")
             linhas.append(f"TUTOR (pergunta): {t.turno.pergunta_verificacao}")
             if t.resposta_aluno is not None:
                 linhas.append(f"ALUNO: {t.resposta_aluno}")
