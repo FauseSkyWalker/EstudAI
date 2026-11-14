@@ -132,11 +132,10 @@ uv run estudai web --porta 8502    # se a porta estiver ocupada
    Sessões concluídas ficam em **Sessões anteriores**, na barra lateral; clique em **Abrir sessão**
    para revê-las em modo somente leitura. Perfis criados antes desse histórico mostram apenas os
    resumos já salvos no perfil.
-   Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: a faixa do pipeline
-   (● etapas concluídas, ▶️ etapa atual) e um quadro com quem está pensando e o que está fazendo
-   (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da parábola”"). O ✅ só aparece
-   quando o ciclo termina. Ao fim de cada mensagem, o painel **🔍 Bastidores** guarda o que
-   aconteceu desde a mensagem anterior.
+   Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: um quadro com quem está
+   pensando e o que está fazendo (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da
+   parábola”"). Ao fim de cada mensagem, o painel **🔍 Bastidores** guarda o que aconteceu desde a
+   mensagem anterior.
 3. No fim do ciclo aparecem acertos, nível estimado, relatório e custo; **Novo ciclo** continua no
    mesmo tópico, já adaptado ao que você errou.
 

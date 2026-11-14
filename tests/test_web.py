@@ -194,8 +194,6 @@ def test_tela_mostra_figura_do_tutor_e_bastidores(app):
     app.run()
     assert not app.exception
     assert len(app.get("image")) == 1
-    legendas = " ".join(c.value for c in app.caption)
-    assert "▶️ **Tutoria**" in legendas and "◻️ Relatório" in legendas  # faixa do pipeline
     assert any("Bastidores desta mensagem" in e.label for e in app.expander)
 
 
@@ -261,26 +259,6 @@ def test_tela_mostra_figuras_da_questao(app):
     app.run()
     assert not app.exception
     assert len(app.get("image")) == 1
-
-
-def test_faixa_pipeline_so_mostra_check_no_fim(monkeypatch):
-    from estudai.interfaces.web import bastidores
-
-    legendas: list[str] = []
-    monkeypatch.setattr(bastidores.st, "caption", lambda texto: legendas.append(texto))
-    eventos = [
-        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Carregando o perfil", etapa="load_profile"),
-        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"),
-    ]
-
-    bastidores.faixa_pipeline(eventos, em_andamento=True)
-    assert "● Carregando o perfil" in legendas[-1]
-    assert "▶️ **Tutoria**" in legendas[-1]
-    assert "✅" not in legendas[-1]
-
-    bastidores.faixa_pipeline(eventos, em_andamento=False)
-    assert "✅ Carregando o perfil" in legendas[-1]
-    assert "✅ Tutoria" in legendas[-1]
 
 
 def test_quadro_ao_vivo_nao_usa_status(monkeypatch):

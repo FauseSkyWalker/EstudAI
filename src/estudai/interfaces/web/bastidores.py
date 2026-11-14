@@ -19,22 +19,6 @@ def _linha(evento: EventoProgresso, inicio: float) -> str:
     return f"`+{evento.instante - inicio:4.0f}s` {ICONES[evento.tipo]} {quem}{evento.descricao}"
 
 
-def faixa_pipeline(eventos: list[EventoProgresso], em_andamento: bool) -> None:
-    """Etapas do grafo: ● concluída, ▶️ atual, ◻️ ainda não alcançada (algumas são puladas,
-    ex.: o diagnóstico de quem já foi diagnosticado). O ✅ só aparece com o ciclo encerrado."""
-    vistas = [e.etapa for e in eventos if e.tipo == TipoProgresso.ETAPA]
-    atual = vistas[-1] if vistas and em_andamento else None
-    partes = []
-    for chave, nome in ETAPAS.items():
-        if chave == atual:
-            partes.append(f"▶️ **{nome}**")
-        elif chave in vistas:
-            partes.append(f"✅ {nome}" if not em_andamento else f"● {nome}")
-        else:
-            partes.append(f"◻️ {nome}")
-    st.caption(" → ".join(partes))
-
-
 def quadro_ao_vivo(eventos: list[EventoProgresso]) -> None:
     """Tudo o que aconteceu desde a última mensagem; redesenhado a cada segundo enquanto trabalham."""
     if not eventos:

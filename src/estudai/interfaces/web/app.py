@@ -16,7 +16,7 @@ from estudai.domain.curriculum import Topico, rotulo_conceito
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.perfil import PerfilAluno
 from estudai.domain.tutoria import TurnoTutor
-from estudai.interfaces.web.bastidores import faixa_pipeline, quadro_ao_vivo, registro_completo
+from estudai.interfaces.web.bastidores import quadro_ao_vivo, registro_completo
 from estudai.interfaces.web.figuras import desenhar_figura
 from estudai.interfaces.web.markdown import markdown_latex
 from estudai.interfaces.web.scroll import controle_scroll
@@ -422,8 +422,6 @@ def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
 
     st.header(f"{TOPICOS[sessao.topico]} · {sessao.aluno_id}")
     estado = sessao.estado
-    em_andamento = estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO)
-    faixa_pipeline(sessao.progresso(), em_andamento)
     ultima_fase = historico(sessao)
     if estado in (EstadoSessao.CONCLUIDA, EstadoSessao.ERRO, EstadoSessao.CANCELADA):
         registro_completo(sessao.progresso_pendente(), titulo="Bastidores finais do ciclo")
