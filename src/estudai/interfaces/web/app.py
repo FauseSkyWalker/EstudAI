@@ -8,6 +8,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from estudai.application.cycle.result import ResultadoCiclo
+from estudai.application.progresso import TipoProgresso
 from estudai.application.sessoes import EventoSessao
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno
@@ -197,11 +198,27 @@ def _titulo_trilha(evento: Evento) -> str:
     return "Bastidores desta mensagem"
 
 
+def _etapa_atual(sessao: SessaoWeb) -> str | None:
+    etapas = [evento.etapa for evento in sessao.progresso() if evento.tipo == TipoProgresso.ETAPA]
+    return etapas[-1] if etapas else None
+
+
+def _transicao_visivel(sessao: SessaoWeb) -> Pedido | None:
+    transicao = sessao.learner.pedido_em_transicao
+    if sessao.estado != EstadoSessao.TRABALHANDO or transicao is None or transicao.item is None:
+        return None
+    if transicao.fase != Fase.PRATICA:
+        return None
+    if _etapa_atual(sessao) not in (None, "practice"):
+        return None
+    return transicao
+
+
 def historico(sessao: SessaoWeb) -> Fase | None:
     eventos = sessao.learner.eventos()
-    transicao = sessao.learner.pedido_em_transicao if sessao.estado == EstadoSessao.TRABALHANDO else None
+    transicao = _transicao_visivel(sessao)
     if transicao is not None and transicao.item_id is not None:
-        # a questão respondida ainda aparece como formulário desabilitado no rodapé
+        # a questão respondida aparece como formulário desabilitado no rodapé
         eventos = [
             evento
             for evento in eventos
@@ -305,8 +322,8 @@ def area_agentes(sessao: SessaoWeb, eventos_vistos: int, ultima_fase: Fase | Non
         st.rerun()
     if sessao.estado == EstadoSessao.TRABALHANDO:
         quadro_ao_vivo(sessao.progresso_pendente())
-        transicao = sessao.learner.pedido_em_transicao
-        if transicao is not None and transicao.item is not None:
+        transicao = _transicao_visivel(sessao)
+        if transicao is not None:
             st.caption("Resposta enviada; aguardando correção…")
             _form_item(sessao, transicao, disabled=True)
     elif sessao.estado == EstadoSessao.AGUARDANDO_ALUNO:

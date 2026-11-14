@@ -471,3 +471,23 @@ def test_tela_mantem_questao_desabilitada_enquanto_corrige(app):
     assert not app.exception
     assert app.radio[0].disabled
     assert sessao.learner.pedido_em_transicao is not None
+
+
+def test_tela_nao_mantem_formulario_de_diagnostico_enquanto_agentes_trabalham(app):
+    item = Exercicio(
+        id="d1",
+        topico=Topico.FUNCOES,
+        enunciado="Quanto é f(2) para f(x) = x²?",
+        alternativas=["2", "4", "6", "8", "10"],
+        gabarito="B",
+    )  # fmt: skip
+    sessao = SessaoFalsa(Pedido(fase=Fase.DIAGNOSTICO, item_id="d1", item=item))
+    app.session_state["sessao"] = sessao
+    app.run()
+
+    app.radio[0].set_value("A")
+    next(button for button in app.button if button.label == "Enviar resposta").click().run()
+
+    assert not app.exception
+    assert not app.radio
+    assert sessao.learner.pedido_em_transicao is not None
