@@ -9,8 +9,9 @@ orquestrador centralizado e sequencial sobre um perfil de aluno único, persiste
 
 ## Arquitetura
 
-O código segue Clean Architecture: as dependências apontam sempre para dentro, e só a raiz de
-composição (`bootstrap.py`) conhece as implementações concretas.
+O código segue Clean Architecture: as dependências apontam para dentro, e só a raiz de
+composição (`bootstrap.py`) conhece as implementações concretas. A exceção é o pipeline de
+ingestão, que reutiliza a base `Agent` para classificar e normalizar questões.
 
 ```
 interfaces/ ──► bootstrap.py ──► infrastructure/
@@ -25,7 +26,8 @@ application/ ──► agents/ ──► ports/ ──► domain/
 | Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `FigureRenderer`, `Learner` | domínio |
 | Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
 | Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
-| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão | portas (implementa) |
+| Orquestração | `orchestration/` | Grafo LangGraph que ordena as fases do ciclo | domínio, portas, agentes, aplicação |
+| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão | portas (implementa); `agents.base` no pipeline de ingestão |
 | Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
 | Interfaces | `interfaces/` | CLI (`typer`), aluno no terminal e web (Streamlit) | bootstrap |
 
@@ -35,7 +37,6 @@ Consequências práticas:
   implementada pelo aluno real (`interfaces/console.py`) e pelo simulado (`evaluation/aluno_simulado.py`).
 - **Condições experimentais sem `if` no orquestrador**: C2 é `ConfigSessao(adaptativo=False)`;
   C3 troca a estratégia `ExerciseProvider` (gerados → banco real).
-- **Testável offline**: todos os agentes recebem um `BaseChatModel` por injeção; os testes usam um LLM roteirizado.
 
 ### Mapeamento metodologia → código
 
@@ -75,24 +76,25 @@ atualização            Diagnosticador usa as correções → perfil v+1 → re
 ## Instalação
 
 ```bash
-uv sync --extra ingest --extra web   # liste todos os extras: o uv sync remove os que ficarem de fora
-                                     # (--all-extras também instala torch/sentence-transformers, pesado)
-cp .env.example .env          # preencha chaves e modelos
+uv sync --extra ingest --extra web   # adicione --extra embeddings se usar sentence-transformers
+cp .env.example .env                 # preencha chaves e modelos
 ```
 
 ### Modelos
 
-Cada nível (`ECONOMIC`, `FRONTIER`, `JUDGES`) escolhe um provedor no `.env` (exemplos comentados
+O `.env.example` já vem com a configuração usada no projeto: **DeepSeek Flash** para os níveis
+econômico e de fronteira, e **Gemini 3 Flash** para os juízes. Cada configuração (`ECONOMIC`,
+`FRONTIER`, `JUDGES`, `PANEL`, `STUDENT`) escolhe um provedor no `.env` (exemplos comentados
 no `.env.example`):
 
 | `PROVIDER` | Quando usar | Chave |
 |---|---|---|
-| `openrouter` | Mais simples: a configuração da metodologia (Gemini 3 Flash + Muse Spark 1.3) com uma chave só | `ESTUDAI_OPENROUTER_API_KEY` |
-| `gemini` | Direto na API do Google (o plano gratuito tem cotas muito baixas) | `ESTUDAI_GEMINI_API_KEY` |
-| `openai_compat` | Qualquer endpoint compatível com a OpenAI (preencha `BASE_URL`) | `ESTUDAI_OPENAI_API_KEY` |
-| `claude_cli` | Usa o Claude Code CLI instalado e logado na máquina | nenhuma |
+| `openai_compat` | DeepSeek ou qualquer endpoint compatível com a OpenAI (preencha `BASE_URL`) | `ESTUDAI_OPENAI_API_KEY` |
+| `gemini` | API do Google (juízes e embeddings; o plano gratuito tem cotas baixas) | `ESTUDAI_GEMINI_API_KEY` |
+| `openrouter` | Um provedor para o chat, com muitos modelos; embeddings continuam no Gemini ou sentence-transformers | `ESTUDAI_OPENROUTER_API_KEY` |
 
-Os embeddings da busca usam o Gemini (`ESTUDAI_GEMINI_API_KEY`) qualquer que seja o provedor de chat.
+Os embeddings da busca usam o Gemini por padrão. Para rodar sem Gemini, use
+`ESTUDAI_EMBEDDING_PROVIDER=sentencetransformers` e instale com `--extra embeddings` (torch).
 Depois de configurar, confira se todos os modelos respondem:
 
 ```bash
@@ -189,15 +191,6 @@ uv run estudai relatorio results/exp1.jsonl --orcamento-usd 0.50
 ```
 
 O experimento grava cada execução assim que termina; rodar de novo o mesmo comando retoma de onde parou.
-
-## Testes
-
-```bash
-uv run pytest
-```
-
-Os testes não fazem chamadas de rede: usam um LLM roteirizado (`tests/fakes.py`), a base BM25
-do LanceDB (sem embeddings) e o executor de sandbox real.
 
 ## Limitações conhecidas (além das da Seção 5.4)
 

@@ -51,8 +51,6 @@ class UsageLedgerCallback(BaseCallbackHandler):
         )
 
     def _custo(self, response, message, inp: int, out: int) -> float:
-        # custo real informado pelo provedor quando existe (Claude CLI: cost_usd; OpenRouter: usage.cost);
-        # nos demais, calcula pela tabela de preços configurada
         informado = (getattr(message, "response_metadata", None) or {}).get("cost_usd")
         if informado is None:
             informado = ((response.llm_output or {}).get("token_usage") or {}).get("cost")

@@ -49,9 +49,7 @@ class ConsoleLearner:
     def reply_to_tutor(self, turno: TurnoTutor) -> str:
         if turno.avaliacao_resposta_anterior:
             self._console.print(Panel(turno.avaliacao_resposta_anterior, title="Sobre sua resposta", style="cyan"))
-        self._console.print(
-            Panel(Markdown(turno.explicacao), title=f"Tutor · {rotulo_conceito(turno.conceito_alvo)}")
-        )
+        self._console.print(Panel(Markdown(turno.explicacao), title=f"Tutor · {rotulo_conceito(turno.conceito_alvo)}"))
         for figura in turno.imagens:
             self._mostrar_figura(figura)
         self._console.print(f"[bold]{turno.pergunta_verificacao}[/bold]")

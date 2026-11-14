@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-Provider = Literal["gemini", "openai_compat", "openrouter", "claude_cli"]
+Provider = Literal["gemini", "openai_compat", "openrouter"]
 StructuredMethod = Literal["json_schema", "function_calling", "json_mode"]
 
 
@@ -41,7 +41,6 @@ def build_chat_model(
     max_retries: int,
     timeout_s: float,
     base_url: str | None = None,
-    effort: str | None = None,
     structured_output_method: StructuredMethod = "json_schema",
     extra_body: dict[str, Any] | None = None,
     callbacks: Sequence[BaseCallbackHandler] = (),
@@ -49,19 +48,6 @@ def build_chat_model(
 ) -> BaseChatModel:
     """`rate_limiter` deve ser compartilhado por todos os modelos que consomem a mesma cota
     (no Gemini, a cota é por modelo e por projeto, não por instância)."""
-    if provider == "claude_cli":
-        from estudai.infrastructure.llm.claude_cli import ClaudeCLIChatModel
-
-        # o CLI usa a própria autenticação e não aceita temperature
-        return ClaudeCLIChatModel(
-            model=model,
-            timeout_s=timeout_s,
-            max_retries=max_retries,
-            effort=effort,
-            callbacks=list(callbacks),
-            rate_limiter=rate_limiter,
-        )
-
     extras: dict[str, Any] = {}
     body = dict(extra_body or {})
     if provider == "gemini":

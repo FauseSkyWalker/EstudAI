@@ -8,31 +8,37 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ModelConfig(BaseModel):
-    provider: Literal["gemini", "openai_compat", "openrouter", "claude_cli"] = "gemini"
+    provider: Literal["gemini", "openai_compat", "openrouter"] = "gemini"
     model: str
     base_url: str | None = None
     price_input_per_mtok: float = 0.0
     price_output_per_mtok: float = 0.0
-    # Limite do fornecedor (ex.: plano gratuito do Gemini 3 Flash = 5/min). None = sem limitador.
     requests_per_minute: float | None = None
-    # Esforço de raciocínio (só claude_cli): low | medium | high | xhigh | max. None = padrão do modelo.
-    effort: str | None = None
-    # Como pedir JSON ao modelo (provedores compatíveis com OpenAI). Nem todo modelo do OpenRouter ou
-    # endpoint próprio aceita json_schema; nesses, use function_calling ou json_mode.
     structured_output_method: Literal["json_schema", "function_calling", "json_mode"] = "json_schema"
-    # Corpo extra enviado ao endpoint (ex.: {"thinking": {"type": "disabled"}} no DeepSeek).
     extra_body: dict[str, Any] = Field(default_factory=dict)
+
+
+def _deepseek_flash() -> ModelConfig:
+    return ModelConfig(
+        provider="openai_compat",
+        model="deepseek-flash",
+        base_url="https://api.deepseek.com",
+        price_input_per_mtok=0.30,
+        price_output_per_mtok=2.50,
+        structured_output_method="function_calling",
+        extra_body={"thinking": {"type": "disabled"}},
+    )
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ESTUDAI_", env_nested_delimiter="__", env_file=".env", extra="ignore")
 
-    economic: ModelConfig = ModelConfig(model="gemini-3-flash-preview")
-    frontier: ModelConfig = ModelConfig(provider="openai_compat", model="muse-spark-1.3")
+    economic: ModelConfig = Field(default_factory=_deepseek_flash)
+    frontier: ModelConfig = Field(default_factory=_deepseek_flash)
     # Painel de resolutores
     panel: list[ModelConfig] | None = None
     # Avaliação - juízes e simulador do aluno
-    judges: list[ModelConfig] = [ModelConfig(model="gemini-3-flash-preview")]
+    judges: list[ModelConfig] = Field(default_factory=lambda: [ModelConfig(provider="gemini", model="gemini-3-flash")])
     student: ModelConfig | None = None  # None = modelo econômico
 
     gemini_api_key: SecretStr | None = None
@@ -73,10 +79,6 @@ class Settings(BaseSettings):
     @property
     def rotulos_cache_path(self) -> Path:
         return self.data_dir / "processed" / "rotulos_cache.jsonl"
-
-    @property
-    def index_dir(self) -> Path:
-        return self.data_dir / "index"
 
     @property
     def profiles_dir(self) -> Path:

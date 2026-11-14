@@ -19,7 +19,6 @@ from estudai.domain.perfil import NivelDominio, PerfilAluno
 from estudai.domain.planejamento import ItemPlanejado, ObjetivoSessao
 from estudai.domain.questoes import Dificuldade, Exercicio, OrigemItem
 from estudai.domain.tutoria import TranscricaoTutoria
-from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.ports.knowledge import SearchMode
 from estudai.ports.tools import ExecutionResult
 
@@ -37,7 +36,7 @@ class AgenteTeste(Agent):
 
 def test_saida_invalida_e_reenviada_com_instrucao_de_correcao():
     llm = FakeChatModel({"tutor": ['{"valor": "abc"}', '{"valor": 7}']})
-    assert AgenteTeste(llm, UsageLedgerCallback()).pedir().valor == 7
+    assert AgenteTeste(llm).pedir().valor == 7
     reparo = llm.requests[1].messages[-1].content
     assert "inválida" in reparo and "valor" in reparo
 
@@ -45,7 +44,7 @@ def test_saida_invalida_e_reenviada_com_instrucao_de_correcao():
 def test_desiste_apos_limite_de_reparos():
     llm = FakeChatModel({"tutor": ["lixo"]})
     with pytest.raises(AgentOutputError):
-        AgenteTeste(llm, UsageLedgerCallback(), max_repairs=1).pedir()
+        AgenteTeste(llm, max_repairs=1).pedir()
     assert len(llm.requests) == 2
 
 
@@ -192,9 +191,7 @@ def test_conteudo_usa_ferramenta_e_descarta_ids_inventados(kb, monkeypatch):
 
 
 def test_diagnosticador_cobre_conceitos_e_cai_para_fallback(banco):
-    diag = Diagnosticador(
-        FakeChatModel({"diagnosticador": ["inválido"]}), UsageLedgerCallback(), max_perguntas=4, max_repairs=0
-    )
+    diag = Diagnosticador(FakeChatModel({"diagnosticador": ["inválido"]}), max_perguntas=4, max_repairs=0)
     sondagem = diag.selecionar_sondagem(Topico.FUNCOES, banco.find(Topico.FUNCOES))
     conceitos = [c for q in sondagem for c in q.conceitos]
     assert len(sondagem) == 4 and len(set(conceitos)) == 4  # cada pergunta cobre um conceito novo
@@ -213,18 +210,16 @@ def test_corretor_tem_corretude_deterministica():
     llm = FakeChatModel({"corretor": [{"nota": 0.9, "feedback": "ok", "erros": []}]})
     item = Exercicio(id="e1", topico=Topico.FUNCOES, enunciado="?", alternativas=list("abcde"), gabarito="C")
     # o LLM dá nota alta, mas a alternativa está errada: `correta` não vem do LLM
-    correcao = Corretor(llm, UsageLedgerCallback()).corrigir(
-        item, RespostaAluno(item_id="e1", escolha="A", resolucao="...")
-    )
+    correcao = Corretor(llm).corrigir(item, RespostaAluno(item_id="e1", escolha="A", resolucao="..."))
     assert correcao.correta is False and correcao.nota == 0.9
 
     # acerto sem resolução não gasta chamada de LLM
-    Corretor(llm, UsageLedgerCallback()).corrigir(item, RespostaAluno(item_id="e1", escolha="c"))
+    Corretor(llm).corrigir(item, RespostaAluno(item_id="e1", escolha="c"))
     assert len(llm.requests) == 1
 
 
 def test_estrategia_de_resposta_segue_o_metodo_do_modelo():
-    """A API da Meta (Muse) recusa tool_choice forçado; com JSON Schema nativo o agente usa ProviderStrategy."""
+    """Alguns provedores recusam tool_choice forçado; com JSON Schema nativo o agente usa ProviderStrategy."""
     from types import SimpleNamespace
 
     from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
@@ -244,7 +239,7 @@ def test_rascunho_aceita_letra_e_converte_texto_da_alternativa():
 
     base = {"enunciado": "?", "alternativas": ["1", "(x - 1)/6", "3", "4", "5"], "resolucao": "."}
     assert RascunhoExercicio(**base, gabarito="c").gabarito == "C"
-    assert RascunhoExercicio(**base, gabarito="(X - 1)/6").gabarito == "B"  # caso real visto com o Muse
+    assert RascunhoExercicio(**base, gabarito="(X - 1)/6").gabarito == "B"
     with pytest.raises(ValidationError):
         RascunhoExercicio(**base, gabarito="nenhuma")
 

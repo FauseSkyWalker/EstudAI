@@ -9,7 +9,6 @@ O item ainda passa pelo painel de resolutores antes de ser entregue (application
 from typing import Any, Literal
 from uuid import uuid4
 
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -93,13 +92,12 @@ class GeradorExercicios(Agent):
         conteudo: AgenteConteudo,
         executor: CodeExecutor,
         *,
-        usage_cb: BaseCallbackHandler | None = None,
         max_steps: int = 6,
         figuras: bool = True,
         max_figuras: int = 1,
         **kw,
     ) -> None:
-        super().__init__(model, usage_cb, **kw)
+        super().__init__(model, **kw)
 
         self._max_steps = max_steps
         self._max_figuras = max_figuras

@@ -955,6 +955,7 @@ all = [
     { name = "streamlit" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "tqdm" },
 ]
 embeddings = [
     { name = "sentence-transformers" },
@@ -966,6 +967,8 @@ gemini = [
 ]
 ingest = [
     { name = "datasets" },
+    { name = "openai" },
+    { name = "tqdm" },
 ]
 openai = [
     { name = "openai" },
@@ -995,6 +998,7 @@ requires-dist = [
     { name = "mathml-to-latex", specifier = ">=1.0.0" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'ingest'", specifier = ">=1.40" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
@@ -1006,6 +1010,7 @@ requires-dist = [
     { name = "sympy", specifier = ">=1.12" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'embeddings') or (sys_platform == 'win32' and extra == 'embeddings')", specifier = ">=2.9", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "estudai", extra = "embeddings" } },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'embeddings'", specifier = ">=2.9" },
+    { name = "tqdm", marker = "extra == 'ingest'", specifier = ">=4.66" },
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["embeddings", "gemini", "openai", "ingest", "web", "all"]

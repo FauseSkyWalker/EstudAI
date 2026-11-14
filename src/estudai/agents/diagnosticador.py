@@ -9,7 +9,6 @@
 import random
 from collections import defaultdict
 
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
@@ -44,13 +43,12 @@ class Diagnosticador(Agent):
     def __init__(
         self,
         model: BaseChatModel,
-        usage_cb: BaseCallbackHandler | None = None,
         *,
         max_perguntas: int = 6,
         cobertura_minima: float = 0.8,
         **kw,
     ):
-        super().__init__(model, usage_cb, **kw)
+        super().__init__(model, **kw)
         self._max_perguntas = max_perguntas
         self._cobertura_minima = cobertura_minima
 

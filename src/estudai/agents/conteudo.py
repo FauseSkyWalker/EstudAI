@@ -5,7 +5,6 @@ de fato retornaram; o texto entregue é sempre o original da base. Ids inventado
 descartados, então a saída é fiel às fontes por construção.
 """
 
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
@@ -39,12 +38,11 @@ class AgenteConteudo(Agent):
         model: BaseChatModel,
         kb: KnowledgeBase,
         *,
-        usage_cb: BaseCallbackHandler | None = None,
         k: int = 4,
         max_steps: int = 4,
         **kw,
     ) -> None:
-        super().__init__(model, usage_cb, **kw)
+        super().__init__(model, **kw)
         self._kb = kb
         self._k = k
         self._max_steps = max_steps

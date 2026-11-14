@@ -23,7 +23,6 @@ from estudai.domain.questoes import Particao, Questao
 from estudai.infrastructure.ingestion.classificador import ClassificadorQuestoes, Rotulo
 from estudai.infrastructure.ingestion.normalizacao import texto_invalido
 from estudai.infrastructure.ingestion.sources import QuestaoBruta
-from estudai.infrastructure.llm.claude_cli import ClaudeCLIError
 
 
 class RotuloCache:
@@ -54,8 +53,10 @@ def _para_questao(bruta: QuestaoBruta, rotulo: Rotulo) -> Questao | None:
 
     enunciado = rotulo.enunciado or bruta.enunciado
     alternativas = rotulo.alternativas or bruta.alternativas
-    if len(alternativas) != len(bruta.alternativas) or texto_invalido(enunciado) or any(
-        texto_invalido(a) for a in alternativas
+    if (
+        len(alternativas) != len(bruta.alternativas)
+        or texto_invalido(enunciado)
+        or any(texto_invalido(a) for a in alternativas)
     ):
         enunciado, alternativas = bruta.enunciado, bruta.alternativas  # normalização suspeita: usa a fonte
 
@@ -141,7 +142,7 @@ def ingerir_questoes(
             elif not cota_esgotada.is_set():
                 print("Limite por minuto atingido (429) após os retries; configure REQUESTS_PER_MINUTE no .env.")
             return b, None
-        except (AgentOutputError, OpenAIError, ClaudeCLIError) as e:  # falha após os retries do cliente
+        except (AgentOutputError, OpenAIError) as e:  # falha após os retries do cliente
             print("Erro ao rotular: ", e)
             return b, None
 

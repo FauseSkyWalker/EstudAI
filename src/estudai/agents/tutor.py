@@ -1,6 +1,5 @@
 """Agente Tutor por Disciplina (modelo de fronteira): uma instância para Matemática e outra para Física."""
 
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 
 from estudai.agents.base import Agent, AgentOutputError, to_json
@@ -74,13 +73,12 @@ class Tutor(Agent):
         disciplina: Disciplina,
         conteudo: AgenteConteudo,
         *,
-        usage_cb: BaseCallbackHandler | None = None,
         figuras: bool = True,
         max_figuras: int = 2,
         max_steps: int = 3,
         **kw,
     ):
-        super().__init__(model, usage_cb, **kw)
+        super().__init__(model, **kw)
         self.disciplina = disciplina
         self._max_steps = max_steps
         self._tools = [call_conteudo_agent_tool(conteudo)]

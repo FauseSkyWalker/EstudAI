@@ -35,7 +35,7 @@ embeddings = [
 ]
 gemini = ["google-genai>=1.0"]
 openai = ["openai>=1.40"]
-ingest = ["datasets>=2.19"]
+ingest = ["datasets>=2.19", "openai>=1.40", "tqdm>=4.66"]
 web = ["streamlit>=1.66"]
 all = ["estudai[embeddings,gemini,openai,ingest,web]"]
 

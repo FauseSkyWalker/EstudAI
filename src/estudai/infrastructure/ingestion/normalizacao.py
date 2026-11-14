@@ -12,7 +12,7 @@ import re
 
 from mathml_to_latex.converter import MathMLToLaTeX
 
-_FALHA_CONVERSAO = "\uFFFD"
+_FALHA_CONVERSAO = "\ufffd"
 
 _MATH = re.compile(r"<(?:[a-zA-Z0-9]+:)?math\b[^>]*>.*?</(?:[a-zA-Z0-9]+:)?math>", re.S | re.I)
 _MATH_ABERTA = re.compile(r"<(?:[a-zA-Z0-9]+:)?math\b", re.I)

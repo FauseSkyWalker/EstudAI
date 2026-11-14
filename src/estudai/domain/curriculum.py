@@ -98,13 +98,6 @@ def rotulo_conceito(conceito: str) -> str:
     return ROTULOS_CONCEITOS.get(conceito, conceito.replace("_", " "))
 
 
-def topico_do_conceito(conceito: str) -> Topico | None:
-    for topico, conceitos in CONCEITOS.items():
-        if conceito in conceitos:
-            return topico
-    return None
-
-
 def conceitos_validos(topico: Topico, conceitos: list[str]) -> list[str]:
     """Filtra conceitos que não pertencem ao tópico (saídas de LLM podem inventar rótulos)."""
     permitidos = set(topico.conceitos)

@@ -57,7 +57,3 @@ PERSONAS: tuple[Persona, ...] = (
         slip=0.12,
     ),
 )
-
-
-def persona_por_id(persona_id: str) -> Persona:
-    return next(p for p in PERSONAS if p.id == persona_id)

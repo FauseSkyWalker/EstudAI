@@ -9,7 +9,6 @@ from typing import Any, TypeVar
 
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ProviderStrategy, StructuredOutputError, ToolStrategy
-from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
@@ -30,17 +29,13 @@ def to_json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
 
 
-def run_config(caller: str, usage_cb: BaseCallbackHandler | None = None) -> RunnableConfig:
-    """Setups the `caller` and usage callback configurations to langchain standards."""
+def run_config(caller: str) -> RunnableConfig:
+    """Setups the `caller` metadata for LangChain callbacks."""
 
-    config: RunnableConfig = {"metadata": {"caller": caller}, "run_name": caller}
-    if usage_cb is not None:
-        config["callbacks"] = [usage_cb]
-
-    return config
+    return {"metadata": {"caller": caller}, "run_name": caller}
 
 
-# Vale para todos os agentes: alguns modelos (ex.: Muse Spark) escrevem português sem acentos
+# Vale para todos os agentes: alguns modelos escrevem português sem acentos
 # ("voce ja domina") se isso não for pedido explicitamente.
 REGRA_IDIOMA = (
     "\n\nEscreva todo texto em português do Brasil, com acentuação e ortografia corretas "
@@ -59,21 +54,14 @@ class AgentOutputError(RuntimeError):
 class Agent:
     papel: Papel
 
-    def __init__(
-        self,
-        model: BaseChatModel,
-        usage_cb: BaseCallbackHandler | None = None,
-        *,
-        max_repairs: int = 2,
-    ) -> None:
+    def __init__(self, model: BaseChatModel, *, max_repairs: int = 2) -> None:
         self._model = model
-        self._usage_cb = usage_cb
         self._max_repairs = max_repairs
         self._structured: dict[type[BaseModel], Any] = {}
         self._tool_agents: dict[tuple[Any, ...], Any] = {}
 
     def _config(self) -> RunnableConfig:
-        return run_config(self.papel.value, self._usage_cb)
+        return run_config(self.papel.value)
 
     def _structured_runnable(self, schema: type[T]) -> Any:
         """Get a runnable model that returns structured outputs"""
@@ -127,13 +115,13 @@ class Agent:
         """Como o agente de ferramentas obtém a resposta final estruturada.
 
         Por padrão, o LangChain usa `ToolStrategy` (uma ferramenta de resposta com `tool_choice="any"`)
-        em modelos que ele não reconhece, e alguns provedores recusam isso: a API da Meta (Muse Spark)
-        só aceita `tool_choice="auto"`. Por isso a estratégia segue o `structured_output_method` do modelo:
+        em modelos que ele não reconhece, e alguns provedores recusam isso: só aceitam
+        `tool_choice="auto"`. Por isso a estratégia segue o `structured_output_method` do modelo:
         JSON Schema nativo → `ProviderStrategy`; `function_calling` → `ToolStrategy`.
         """
         metodo = getattr(self._model, "structured_output_method", None)
         if metodo is None:
-            return schema  # modelo sem essa configuração (ex.: Claude CLI, testes): escolha do LangChain
+            return schema  # modelo sem essa configuração (ex.: testes): escolha do LangChain
         return ToolStrategy(schema) if metodo == "function_calling" else ProviderStrategy(schema)
 
     def _run_tool_agent(
