@@ -31,7 +31,10 @@ _REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visua
     (`plt` e `np` já estão importados; não use plt.show(), plt.savefig() nem arquivos), com eixos
     rotulados e unidades.
   - `tipo="diagrama"` para diagramas conceituais. Escreva fonte Mermaid (flowchart, mindmap, timeline,
-    stateDiagram ou classDiagram), com rótulos curtos e sem links/cliques.
+    stateDiagram ou classDiagram), com rótulos curtos e sem links/cliques. Em diagramas Mermaid,
+    NÃO use `$...$`, `$$...$$` nem LaTeX: escreva a matemática em texto simples e curto
+    (ex.: `f(x) = ax + b`, `a > 0`, `x = -b/2a`). Se a fórmula for complexa, explique-a no texto
+    da resposta em vez de colocá-la no diagrama.
   Use no máximo {max_figuras} figura(s) por rodada, com números coerentes com a explicação. As
   figuras e a descrição não podem revelar a resposta da pergunta de verificação. Deixe `figuras` vazio quando 
   o conceito não for visual ou quando a figura repetir uma anterior.

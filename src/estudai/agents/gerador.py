@@ -45,7 +45,10 @@ Requisitos:
 _REGRA_FIGURAS = """- Figuras: use no máximo {max_figuras} figura(s). Inclua pelo menos uma figura quando o
   conceito-alvo for visual (por exemplo: gráficos de funções, geometria, cinemática, forças,
   probabilidade ou diagramas de fluxo); não use figuras decorativas. Para cada uma, preencha
-  `figuras` com `tipo` grafico (matplotlib) ou diagrama (Mermaid). A `descricao` precisa ser
+  `figuras` com `tipo` grafico (matplotlib) ou diagrama (Mermaid). Em diagramas Mermaid, NÃO use
+  `$...$`, `$$...$$` nem LaTeX: escreva a matemática em texto simples e curto (ex.: `f(x) = ax + b`,
+  `a > 0`, `x = -b/2a`). Se a fórmula for complexa, use um gráfico matplotlib ou explique-a no
+  enunciado. A `descricao` precisa ser
   detalhada o suficiente para quem só lê o texto (corretores futuros verão somente o texto), não
   pode revelar a resposta e o enunciado com as legendas deve continuar resolvível sem a imagem."""
 
