@@ -237,8 +237,10 @@ class Container:
                 d: Tutor(
                     self.fronteira(Papel.TUTOR),
                     d,
+                    self.conteudo,
                     figuras=usar_figuras,
                     max_figuras=s.max_figuras_tutor,
+                    max_steps=s.tutor_max_steps,
                 )
                 for d in Disciplina
             },

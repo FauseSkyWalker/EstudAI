@@ -1,3 +1,5 @@
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from langchain_core.runnables import RunnableConfig
@@ -5,12 +7,29 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from estudai.domain.curriculum import Topico
-from estudai.domain.material import TipoDocumento
+from estudai.domain.material import PacoteMaterial, TipoDocumento
+from estudai.domain.mensagens import Papel
 from estudai.ports.knowledge import KnowledgeBase, SearchHit
 from estudai.ports.tools import CodeExecutor
 
 if TYPE_CHECKING:
     from estudai.agents.conteudo import AgenteConteudo
+
+
+@dataclass
+class RegistroConteudo:
+    """Consultas feitas ao Agente de Conteúdo numa fase, para log e merge do material entregue ao orquestrador"""
+
+    remetente: Papel
+    limite: int | None = None
+    trocas: list[tuple[str, PacoteMaterial]] = field(default_factory=list)
+
+    @property
+    def esgotado(self) -> bool:
+        return self.limite is not None and len(self.trocas) >= self.limite
+
+
+REGISTRO_CONTEUDO: ContextVar[RegistroConteudo | None] = ContextVar("registro_conteudo", default=None)
 
 
 class _SearchArgs(BaseModel):
@@ -61,8 +80,17 @@ def search_tool(modo, kb: KnowledgeBase, k: int) -> StructuredTool:
 
 def call_conteudo_agent_tool(agente_conteudo: "AgenteConteudo") -> StructuredTool:
     def consultar(pedido: str, config: RunnableConfig = None) -> str:
+        registro = REGISTRO_CONTEUDO.get()
+        if registro is not None and registro.esgotado:
+            return (
+                "Você já consultou o Agente de Conteúdo nesta rodada. "
+                "Use o material já disponível e produza a resposta."
+            )
         topico: Topico | None = _configurable(config).get("topico")
-        return agente_conteudo.buscar(pedido, topico).como_contexto(max_chars=3000)
+        pacote = agente_conteudo.buscar(pedido, topico)
+        if registro is not None:
+            registro.trocas.append((pedido, pacote))
+        return pacote.como_contexto(max_chars=3000)
 
     return StructuredTool.from_function(
         func=consultar,

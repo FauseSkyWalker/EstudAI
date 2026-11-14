@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     react_max_steps: int = 8
     max_perguntas_diagnostico: int = 6
     max_rodadas_tutoria: int = 6
+    tutor_max_steps: int = 3
     exercicios_por_sessao: int = 8
     tamanho_painel: int = 3
 

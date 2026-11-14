@@ -17,7 +17,7 @@ from estudai.application.pratica import BankExerciseProvider, GeneratedExerciseP
 from estudai.application.telemetria import UsageLedger
 from estudai.application.validacao import PainelResolutores, ValidadorExercicios, VerificadorSimbolico
 from estudai.domain.curriculum import Disciplina, Topico
-from estudai.domain.mensagens import TipoMensagem
+from estudai.domain.mensagens import Papel, TipoMensagem
 from estudai.domain.questoes import OrigemItem, Particao
 from estudai.domain.tutoria import Encerramento
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
@@ -38,6 +38,7 @@ def handlers(
     voto_painel: str = "5",
     figuras: list[dict] | None = None,
     figuras_item: list[dict] | None = None,
+    tutor_consulta: bool = False,
 ) -> dict:
     """`voto_painel` é o TEXTO da alternativa em que o painel vota: as alternativas geradas são
     embaralhadas, então o painel (como o real) resolve pelo conteúdo, não por uma letra fixa."""
@@ -46,15 +47,32 @@ def handlers(
         # 1ª rodada: ensina; 2ª: valida os conceitos-alvo (lidos do objetivo no prompt) e encerra
         prompt = next(m.content for m in request.messages if m.type == "human")  # [0] é o SystemMessage
         primeira = "(início da sessão)" in prompt
+        ja_consultou = any(getattr(m, "type", None) == "tool" for m in request.messages)
+        if tutor_consulta and primeira and not ja_consultou:
+            return tool_call("consultar_conteudo", {"pedido": "função afim"}, "call-conteudo-tutor")
         alvo = ["funcao_quadratica", "funcao_exponencial"]
-        return {
-            "conceito_alvo": alvo[0],
-            "explicacao": "O vértice fica em x = -b/2a [wb-quad].",
-            "pergunta_verificacao": "Onde fica o vértice de x² - 4x?",
-            "conceitos_validados": [] if primeira else alvo,
-            "objetivo_atingido": not primeira,
-            "figuras": (figuras or []) if primeira else [],
-        }
+        return structured_final(
+            "TurnoTutor",
+            {
+                "conceito_alvo": alvo[0],
+                "explicacao": "O vértice fica em x = -b/2a [wb-quad].",
+                "pergunta_verificacao": "Onde fica o vértice de x² - 4x?",
+                "conceitos_validados": [] if primeira else alvo,
+                "objetivo_atingido": not primeira,
+                "figuras": (figuras or []) if primeira else [],
+            },
+            "call-final-tutor",
+        )
+
+    conteudo = [
+        tool_call("busca_hibrida", {"consulta": "função quadrática vértice"}, "call-search"),
+        structured_final("SelecaoConteudo", {"trechos": ["wb-quad"], "questoes_referencia": []}, "call-final"),
+    ]
+    if tutor_consulta:
+        conteudo += [
+            tool_call("busca_hibrida", {"consulta": "função afim reta"}, "call-search-2"),
+            structured_final("SelecaoConteudo", {"trechos": ["wb-afim"], "questoes_referencia": []}, "call-final-2"),
+        ]
 
     return {
         ("diagnosticador", "Diagnostico"): [
@@ -67,10 +85,7 @@ def handlers(
                 "lacunas": ["funcao_quadratica", "funcao_exponencial"],
             }
         ],
-        "conteudo": [
-            tool_call("busca_hibrida", {"consulta": "função quadrática vértice"}, "call-search"),
-            structured_final("SelecaoConteudo", {"trechos": ["wb-quad"], "questoes_referencia": []}, "call-final"),
-        ],
+        "conteudo": conteudo,
         "tutor": tutor,
         ("resumo", "ResumoEstudo"): [{"titulo": "Função quadrática", "pontos_chave": ["vértice em -b/2a"]}],
         ("resumo", "RelatorioPratica"): [{"desempenho": "Bom progresso."}],
@@ -138,7 +153,7 @@ def montar(
     perfis = JsonProfileRepository(tmp_path)
     orq = Orquestrador(
         diagnosticador=Diagnosticador(llm, max_perguntas=4),
-        tutores={d: Tutor(llm, d) for d in Disciplina},
+        tutores={d: Tutor(llm, d, conteudo) for d in Disciplina},
         conteudo=conteudo,
         resumo=AgenteResumo(llm),
         corretor=Corretor(llm),
@@ -197,6 +212,18 @@ def test_ciclo_adaptativo_completo(kb, banco, executor, tmp_path):
         "corretor",
         "resumo",
     } <= set(r.uso.por_agente)
+
+
+def test_tutor_consulta_conteudo_e_usa_material_novo_na_sessao(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, tutor_consulta=True)
+    aluno = ScriptedLearner(padrao="errada")
+    r = orq.executar_ciclo("edu", T, aluno)
+
+    ids = [t.doc_id for t in r.material.trechos]
+    assert ids[0] == "wb-quad" and "wb-afim" in ids
+    pedidos = [m for m in r.mensagens if m.tipo == TipoMensagem.PEDIDO and m.remetente == Papel.TUTOR]
+    assert len(pedidos) == 2  # retirada inicial + consulta da rodada
+    assert pedidos[-1].carga["pedido"] == "função afim"
 
 
 def test_perfil_ja_diagnosticado_nao_repete_diagnostico(kb, banco, executor, tmp_path):

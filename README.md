@@ -42,8 +42,8 @@ Consequências práticas:
 | Metodologia | Código |
 |---|---|
 | Agente Diagnosticador | `agents/diagnosticador.py` (sondagem por cobertura de conceitos + estimativa LLM com fallback determinístico) |
-| Agente Tutor por Disciplina | `agents/tutor.py` (uma instância por `Disciplina`) |
-| Agente de Conteúdo (LangChain + ferramentas, RAG) | `agents/conteudo.py` (busca semântica/textual/híbrida; só seleciona ids → fidelidade por construção) |
+| Agente Tutor por Disciplina | `agents/tutor.py` (uma instância por `Disciplina`; pode consultar o Agente de Conteúdo uma vez por rodada) |
+| Agente de Conteúdo (LangChain + ferramentas, RAG) | `agents/conteudo.py` (busca semântica/textual/híbrida; só seleciona ids → fidelidade por construção; usado pelo orquestrador, pelo Tutor e pelo Gerador) |
 | Agente de Resumo | `agents/resumo.py` (resumo de revisão + relatório da prática) |
 | Agente Gerador de Exercícios (LangChain + ferramentas) | `agents/gerador.py` (ferramentas `consultar_conteudo` e `executar_python`) |
 | Agente Corretor | `agents/corretor.py` (corretude determinística; LLM só diagnostica o raciocínio) |
@@ -65,6 +65,7 @@ Consequências práticas:
 ```
 [diagnóstico inicial]  Diagnosticador escolhe questões do banco → aluno responde → nível/lacunas → perfil v+1
 tutoria                objetivo derivado do perfil → Conteúdo (RAG) → Tutor ⇄ aluno (até objetivo ou limite)
+                       o Tutor pode consultar o Conteúdo mais uma vez por rodada (material novo entra no pacote)
 resumo                 Agente de Resumo → material de revisão
 prática                Gerador (LangChain + ferramentas) → verificação simbólica + painel → itens aprovados
 correção               aluno resolve → Corretor (gabarito suspeito → painel → item removido e notificado)

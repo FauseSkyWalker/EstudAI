@@ -30,6 +30,19 @@ class PacoteMaterial(BaseModel):
     def referencias(self) -> list[str]:
         return [t.doc_id for t in self.trechos + self.questoes_referencia]
 
+    def mesclar(self, *outros: "PacoteMaterial") -> "PacoteMaterial":
+        """Une pacotes preservando a primeira ocorrência de cada id (ordem de chegada)."""
+        trechos = {t.doc_id: t for t in self.trechos}
+        questoes = {q.doc_id: q for q in self.questoes_referencia}
+        for outro in outros:
+            for trecho in outro.trechos:
+                trechos.setdefault(trecho.doc_id, trecho)
+            for questao in outro.questoes_referencia:
+                questoes.setdefault(questao.doc_id, questao)
+        return self.model_copy(
+            update={"trechos": list(trechos.values()), "questoes_referencia": list(questoes.values())}
+        )
+
     def como_contexto(self, max_chars: int = 6000) -> str:
         partes, total = [], 0
         for t in self.trechos + self.questoes_referencia:

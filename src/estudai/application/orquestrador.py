@@ -22,6 +22,7 @@ from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.corretor import Corretor
 from estudai.agents.diagnosticador import Diagnosticador, Evidencia
 from estudai.agents.resumo import AgenteResumo
+from estudai.agents.tools import REGISTRO_CONTEUDO, RegistroConteudo
 from estudai.agents.tutor import Tutor
 from estudai.application.mensageria import MessageLog
 from estudai.application.pratica import ExerciseProvider, ResultadoFornecimento
@@ -220,17 +221,23 @@ class Orquestrador:
         material: PacoteMaterial,
         aluno: Learner,
         log: MessageLog,
-    ) -> TranscricaoTutoria:
+    ) -> tuple[TranscricaoTutoria, PacoteMaterial]:
         tutor = self._tutores[objetivo.topico.disciplina]
         visao = perfil.visao(objetivo.topico)
         transcricao = TranscricaoTutoria(objetivo=objetivo, encerramento=Encerramento.LIMITE_RODADAS)
         alvo = set(objetivo.conceitos_alvo)
         for rodada in range(1, self._config.max_rodadas_tutoria + 1):
+            registro = RegistroConteudo(remetente=Papel.TUTOR, limite=1)
+            token = REGISTRO_CONTEUDO.set(registro)
             try:
                 turno = tutor.proximo_turno(visao, objetivo, material, transcricao)
             except AgentOutputError:
+                material = self._merge_conteudo(registro, material, log)
                 transcricao.encerramento = Encerramento.FALHA
                 break
+            finally:
+                REGISTRO_CONTEUDO.reset(token)
+            material = self._merge_conteudo(registro, material, log)
             turno = self._draw_figures(turno)
             log.send(Papel.TUTOR, Papel.ALUNO, TipoMensagem.TUTORIA, turno, referencias=material.referencias)
             concluido = turno.objetivo_atingido or alvo <= set(
@@ -244,7 +251,21 @@ class Orquestrador:
             resposta = aluno.reply_to_tutor(turno)
             log.send(Papel.ALUNO, Papel.TUTOR, TipoMensagem.RESPOSTA, {"texto": resposta})
             transcricao.trocas.append(TrocaTutoria(rodada=rodada, turno=turno, resposta_aluno=resposta))
-        return transcricao
+        return transcricao, material
+
+    def _merge_conteudo(self, registro: RegistroConteudo, material: PacoteMaterial, log: MessageLog) -> PacoteMaterial:
+        """Registra as consultas feitas pelo agente e une o material recuperado ao pacote da sessão."""
+        for pedido, pacote in registro.trocas:
+            log.send(registro.remetente, Papel.CONTEUDO, TipoMensagem.PEDIDO, {"pedido": pedido})
+            log.send(
+                Papel.CONTEUDO,
+                registro.remetente,
+                TipoMensagem.MATERIAL,
+                pacote,
+                referencias=pacote.referencias,
+            )
+            material = material.mesclar(pacote)
+        return material
 
     def _draw_figures(self, turno: TurnoTutor) -> TurnoTutor:
         """Desenha as figuras pedidas pelo Tutor. Cada falha descarta apenas aquela figura, para a
@@ -283,7 +304,22 @@ class Orquestrador:
     def _provide_exercises(
         self, perfil: PerfilAluno, topico: Topico, excluir: frozenset[str], log: MessageLog
     ) -> ResultadoFornecimento:
-        fornecimento = self._fornecedor.fornecer(perfil, topico, self._config.exercicios_por_sessao, excluir)
+        # o Gerador de Exercícios pode consultar o Agente de Conteúdo durante a geração
+        registro = RegistroConteudo(remetente=Papel.GERADOR_EXERCICIOS)
+        token = REGISTRO_CONTEUDO.set(registro)
+        try:
+            fornecimento = self._fornecedor.fornecer(perfil, topico, self._config.exercicios_por_sessao, excluir)
+        finally:
+            REGISTRO_CONTEUDO.reset(token)
+        for pedido, pacote in registro.trocas:
+            log.send(Papel.GERADOR_EXERCICIOS, Papel.CONTEUDO, TipoMensagem.PEDIDO, {"pedido": pedido})
+            log.send(
+                Papel.CONTEUDO,
+                Papel.GERADOR_EXERCICIOS,
+                TipoMensagem.MATERIAL,
+                pacote,
+                referencias=pacote.referencias,
+            )
         for descartado in fornecimento.descartados:
             log.send(
                 Papel.PAINEL_RESOLUTORES,

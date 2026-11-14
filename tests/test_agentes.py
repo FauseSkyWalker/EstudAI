@@ -267,20 +267,23 @@ def test_rascunho_incoerente_vira_falha_do_agente_e_nao_derruba_o_ciclo(monkeypa
 def test_tutor_normaliza_latex_nas_saidas():
     llm = FakeChatModel(
         {
-            ("tutor", "TurnoTutor"): [
-                {
-                    "avaliacao_resposta_anterior": r"Você usou $x^2$.",
-                    "conceito_alvo": "funcao_quadratica",
-                    "explicacao": r"O vértice é $x_v = -\frac{b}{2a}$.",
-                    "pergunta_verificacao": r"Quanto vale $f(1)$?",
-                }
+            "tutor": [
+                structured_final(
+                    "TurnoTutor",
+                    {
+                        "avaliacao_resposta_anterior": r"Você usou $x^2$.",
+                        "conceito_alvo": "funcao_quadratica",
+                        "explicacao": r"O vértice é $x_v = -\frac{b}{2a}$.",
+                        "pergunta_verificacao": r"Quanto vale $f(1)$?",
+                    },
+                )
             ]
         }
     )
     objetivo = ObjetivoSessao(
         topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
     )
-    turno = Tutor(llm, Disciplina.MATEMATICA).proximo_turno(
+    turno = Tutor(llm, Disciplina.MATEMATICA, _ConteudoStub()).proximo_turno(
         {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
     )
 
@@ -292,15 +295,18 @@ def test_tutor_normaliza_latex_nas_saidas():
 def _system_do_tutor(**kwargs) -> str:
     llm = FakeChatModel(
         {
-            ("tutor", "TurnoTutor"): [
-                {"conceito_alvo": "funcao_quadratica", "explicacao": "x", "pergunta_verificacao": "y?"}
+            "tutor": [
+                structured_final(
+                    "TurnoTutor",
+                    {"conceito_alvo": "funcao_quadratica", "explicacao": "x", "pergunta_verificacao": "y?"},
+                )
             ]
         }
     )
     objetivo = ObjetivoSessao(
         topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
     )
-    Tutor(llm, Disciplina.MATEMATICA, **kwargs).proximo_turno(
+    Tutor(llm, Disciplina.MATEMATICA, _ConteudoStub(), **kwargs).proximo_turno(
         {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
     )
     return next(m.content for m in llm.requests[0].messages if m.type == "system")
@@ -314,6 +320,56 @@ def test_tutor_inclui_regra_de_figuras_por_padrao():
 
 def test_tutor_omite_regra_de_figuras_quando_desligadas():
     assert "Figuras:" not in _system_do_tutor(figuras=False)
+
+
+def _objetivo_tutor() -> ObjetivoSessao:
+    return ObjetivoSessao(
+        topico=Topico.FUNCOES, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="ensinar"
+    )
+
+
+def test_tutor_consulta_conteudo_no_maximo_uma_vez_por_rodada():
+    from estudai.agents.tools import REGISTRO_CONTEUDO, RegistroConteudo
+
+    passos = [
+        tool_call("consultar_conteudo", {"pedido": "função quadrática"}, "c1"),
+        tool_call("consultar_conteudo", {"pedido": "função afim"}, "c2"),
+        structured_final(
+            "TurnoTutor", {"conceito_alvo": "funcao_quadratica", "explicacao": "x", "pergunta_verificacao": "y?"}
+        ),
+    ]
+    conteudo = _ConteudoStub()
+    llm = FakeChatModel({"tutor": passos})
+    objetivo = _objetivo_tutor()
+    registro = RegistroConteudo(remetente=Papel.TUTOR, limite=1)
+    token = REGISTRO_CONTEUDO.set(registro)
+    try:
+        turno = Tutor(llm, Disciplina.MATEMATICA, conteudo).proximo_turno(
+            {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
+        )
+    finally:
+        REGISTRO_CONTEUDO.reset(token)
+
+    assert turno.conceito_alvo == "funcao_quadratica"
+    assert len(conteudo.calls) == 1 and conteudo.calls[0][0] == "função quadrática"
+    assert len(registro.trocas) == 1
+
+
+def test_tutor_cai_para_resposta_sem_ferramentas_quando_o_laco_falha():
+    llm = FakeChatModel(
+        {
+            "tutor": [tool_call("consultar_conteudo", {"pedido": "função quadrática"}, "c1")],
+            ("tutor", "TurnoTutor"): [
+                {"conceito_alvo": "funcao_quadratica", "explicacao": "x", "pergunta_verificacao": "y?"}
+            ],
+        }
+    )
+    objetivo = _objetivo_tutor()
+    turno = Tutor(llm, Disciplina.MATEMATICA, _ConteudoStub(), max_steps=1).proximo_turno(
+        {}, objetivo, PacoteMaterial(pedido="função quadrática"), TranscricaoTutoria(objetivo=objetivo)
+    )
+
+    assert turno.conceito_alvo == "funcao_quadratica"
 
 
 def test_corretor_normaliza_latex_no_feedback_e_nos_erros():

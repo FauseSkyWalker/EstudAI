@@ -3,7 +3,9 @@
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 
-from estudai.agents.base import Agent, to_json
+from estudai.agents.base import Agent, AgentOutputError, to_json
+from estudai.agents.conteudo import AgenteConteudo
+from estudai.agents.tools import call_conteudo_agent_tool
 from estudai.domain.curriculum import Disciplina
 from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.material import PacoteMaterial
@@ -25,6 +27,10 @@ _ORIENTACOES = {
         "diagramas de corpo livre, planos inclinados e circuitos."
     ),
 }
+
+_REGRA_CONTEUDO = """- Consulta ao material: o material inicial está no pedido desta rodada. Se ele não cobrir o
+  conceito-alvo ou o usuário explicitamente pedir material externo, use `consultar_conteudo` UMA vez; 
+  depois responda com o que tiver. Cite os ids retornados entre colchetes, ex.: [wb-123]."""
 
 _REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visual, preencha `figura` com um pedido curto:
   - `tipo="grafico"` para gráficos quantitativos e desenhos físicos. Escreva código matplotlib
@@ -55,7 +61,8 @@ Regras:
   primeira rodada, retome em uma frase o que já foi visto; priorize os `proximos_passos` e os
   `erros_comuns`/`conceitos_com_erro` que se repetem; não reexplique do zero o que o aluno já
   dominou. Sem sessões anteriores, comece normalmente.
-{figuras}"""
+{figuras}
+{conteudo}"""
 
 
 class Tutor(Agent):
@@ -65,20 +72,25 @@ class Tutor(Agent):
         self,
         model: BaseChatModel,
         disciplina: Disciplina,
+        conteudo: AgenteConteudo,
         *,
         usage_cb: BaseCallbackHandler | None = None,
         figuras: bool = True,
         max_figuras: int = 2,
+        max_steps: int = 3,
         **kw,
     ):
         super().__init__(model, usage_cb, **kw)
         self.disciplina = disciplina
+        self._max_steps = max_steps
+        self._tools = [call_conteudo_agent_tool(conteudo)]
         regra_figuras = _REGRA_FIGURAS.format(max_figuras=max_figuras) if figuras else ""
         self._system = (
             SYSTEM.format(
                 disciplina=disciplina.value,
                 orientacao=_ORIENTACOES[disciplina],
                 figuras=regra_figuras,
+                conteudo=_REGRA_CONTEUDO,
             )
             + ESPECIFICACAO_LATEX
         )
@@ -99,7 +111,22 @@ class Tutor(Agent):
             f"Conceitos já validados: {transcricao.conceitos_validados}\n"
             "Produza a próxima rodada."
         )
-        turno = self._ask(self._system, prompt, TurnoTutor)
+        try:
+            turno = self._run_tool_agent(
+                prompt,
+                self._tools,
+                self._system,
+                TurnoTutor,
+                self._max_steps,
+                configurable={"topico": objetivo.topico},
+            )
+        except AgentOutputError:
+            # fallback - responde sem consultar a base caos
+            turno = self._ask(
+                self._system,
+                prompt + "\n\nResponda usando apenas o material já fornecido; não consulte a base agora.",
+                TurnoTutor,
+            )
         return turno.model_copy(
             update={
                 "avaliacao_resposta_anterior": (

@@ -147,6 +147,22 @@ def test_embaralhar_alternativas_preserva_a_resposta_correta():
     assert set(posicoes) == {"A", "B", "C", "D", "E"} and max(posicoes.values()) < 70  # sem posição dominante
 
 
+def test_mesclar_material_preserva_ordem_e_nao_duplica_ids():
+    from estudai.domain.material import PacoteMaterial, TipoDocumento, TrechoRecuperado
+
+    def trecho(doc_id: str, texto: str = "x") -> TrechoRecuperado:
+        return TrechoRecuperado(doc_id=doc_id, tipo=TipoDocumento.MATERIAL, fonte="f", texto=texto, score=0.5)
+
+    base = PacoteMaterial(pedido="inicial", trechos=[trecho("wb-quad", "original")])
+    novo = PacoteMaterial(pedido="rodada", trechos=[trecho("wb-quad", "duplicado"), trecho("wb-afim")])
+
+    merged = base.mesclar(novo)
+
+    assert [t.doc_id for t in merged.trechos] == ["wb-quad", "wb-afim"]
+    assert merged.trechos[0].texto == "original"
+    assert merged.pedido == "inicial"
+
+
 def test_formatar_inclui_descricoes_de_imagens_sem_duplicar():
     base = dict(id="e", topico=T, alternativas=list("abcde"), gabarito="A")
     inline = Exercicio(

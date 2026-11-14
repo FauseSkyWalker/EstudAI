@@ -49,14 +49,14 @@ def build_cycle_graph(orchestrator: Orquestrador) -> Any:
         return {"material": material}
 
     def tutor(state: CycleState) -> dict[str, Any]:
-        transcript = orchestrator._run_tutoring(
+        transcript, material = orchestrator._run_tutoring(
             state["profile"],
             state["objective"],
             state["material"],
             state["learner"],
             state["log"],
         )
-        return {"transcript": transcript}
+        return {"transcript": transcript, "material": material}
 
     def summarize(state: CycleState) -> dict[str, Any]:
         summary = orchestrator._summarize_tutoring(
