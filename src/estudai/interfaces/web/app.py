@@ -5,6 +5,7 @@ O ciclo roda numa thread (`SessaoWeb`); esta tela só desenha o estado e entrega
 """
 
 import streamlit as st
+from dotenv import load_dotenv
 
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno
@@ -16,6 +17,9 @@ from estudai.interfaces.web.figuras import desenhar_figura
 from estudai.interfaces.web.markdown import markdown_latex
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
+
+# telemetria opcional (ex.: LANGSMITH_*) configurada no .env precisa estar no ambiente do processo
+load_dotenv()
 
 TOPICOS = {
     Topico.FUNCOES: "Funções",
@@ -116,6 +120,8 @@ def desenhar_evento(evento: Evento) -> None:
         item_id, item, resposta = evento.conteudo
         with st.expander(f"Questão {item_id} · você marcou **{resposta.escolha or 'em branco'}**"):
             st.markdown(markdown_latex(item.formatar()))
+            for figura in getattr(item, "imagens", []):
+                desenhar_figura(figura)
     elif evento.tipo == TipoEvento.NOTIFICACAO:
         _desenhar_notificacao(evento.conteudo)
     else:
@@ -169,6 +175,8 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
     with st.form(key=f"item-{pedido.item_id}", border=True):
         st.markdown(f"**Questão {pedido.item_id}**")
         st.markdown(markdown_latex(item.enunciado))
+        for figura in getattr(item, "imagens", []):
+            desenhar_figura(figura)
         escolha = st.radio(
             "Alternativas",
             item.letras,

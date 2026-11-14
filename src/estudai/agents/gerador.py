@@ -17,6 +17,7 @@ from estudai.agents.base import Agent, AgentOutputError, to_json
 from estudai.agents.conteudo import AgenteConteudo
 from estudai.agents.tools import call_conteudo_agent_tool, python_tool
 from estudai.domain.curriculum import Topico
+from estudai.domain.figura import PedidoFigura
 from estudai.domain.latex import ESPECIFICACAO_LATEX, para_inline
 from estudai.domain.mensagens import Papel
 from estudai.domain.planejamento import ItemPlanejado
@@ -28,7 +29,7 @@ SYSTEM = (
 brasileiros. Crie UMA questão objetiva inédita no estilo ENEM/Fuvest/Unicamp.
 Requisitos:
 - Exatamente 5 alternativas, apenas UMA correta; distratores plausíveis, baseados em erros típicos.
-- Sem pistas gramaticais ou de tamanho entre alternativas; enunciado claro e autocontido (sem figuras).
+- Sem pistas gramaticais ou de tamanho entre alternativas. Enunciado claro e autocontido.
 - Adeque ao conceito-alvo, à dificuldade e às lacunas do aluno.
 - Confira as contas com `executar_python` antes de finalizar.
 - Se a resposta for numérica, preencha `codigo_verificacao` com um script Python que faça
@@ -41,6 +42,13 @@ Requisitos:
     + ESPECIFICACAO_LATEX
 )
 
+_REGRA_FIGURAS = """- Figuras: use no máximo {max_figuras} figura(s). Inclua pelo menos uma figura quando o
+  conceito-alvo for visual (por exemplo: gráficos de funções, geometria, cinemática, forças,
+  probabilidade ou diagramas de fluxo); não use figuras decorativas. Para cada uma, preencha
+  `figuras` com `tipo` grafico (matplotlib) ou diagrama (Mermaid). A `descricao` precisa ser
+  detalhada o suficiente para quem só lê o texto (corretores futuros verão somente o texto), não
+  pode revelar a resposta e o enunciado com as legendas deve continuar resolvível sem a imagem."""
+
 
 class RascunhoExercicio(BaseModel):
     enunciado: str
@@ -49,6 +57,14 @@ class RascunhoExercicio(BaseModel):
     resolucao: str
     codigo_verificacao: str | None = None
     referencias: list[str] = Field(default_factory=list)
+    figuras: list[PedidoFigura] = Field(
+        default_factory=list,
+        description=(
+            "Figuras que apoiam o enunciado. Inclua uma quando o conceito for visual (gráficos, "
+            "geometria, cinemática, forças, probabilidade). A descrição deve bastar para resolver a "
+            "questão sem a imagem e não pode revelar a resposta."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -75,11 +91,15 @@ class GeradorExercicios(Agent):
         *,
         usage_cb: BaseCallbackHandler | None = None,
         max_steps: int = 6,
+        figuras: bool = True,
+        max_figuras: int = 1,
         **kw,
     ) -> None:
         super().__init__(model, usage_cb, **kw)
 
         self._max_steps = max_steps
+        self._max_figuras = max_figuras
+        self._system = SYSTEM + ("\n\n" + _REGRA_FIGURAS.format(max_figuras=max_figuras) if figuras else "")
         self._tools = [python_tool(executor), call_conteudo_agent_tool(conteudo)]
 
     def gerar(self, perfil: dict, topico: Topico, plano: ItemPlanejado, evitar: list[str]) -> Exercicio:
@@ -93,11 +113,13 @@ class GeradorExercicios(Agent):
         rascunho = self._run_tool_agent(
             prompt,
             self._tools,
-            SYSTEM,
+            self._system,
             RascunhoExercicio,
             self._max_steps,
             configurable={"topico": topico},
         )
+        if len(rascunho.figuras) > self._max_figuras:
+            rascunho = rascunho.model_copy(update={"figuras": rascunho.figuras[: self._max_figuras]})
         try:
             # embaralha antes da validação: o painel valida a mesma ordem que o aluno verá
             return self._montar(rascunho, topico, plano).com_alternativas_embaralhadas()
@@ -118,4 +140,6 @@ class GeradorExercicios(Agent):
             origem=OrigemItem.GERADO,
             referencias=rascunho.referencias,
             codigo_verificacao=rascunho.codigo_verificacao,
+            figuras=rascunho.figuras,
+            descricoes_imagens=[figura.descricao for figura in rascunho.figuras],
         )

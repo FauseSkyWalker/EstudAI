@@ -51,10 +51,11 @@ class Settings(BaseSettings):
     figuras: bool = True
     figuras_timeout_s: float = 30.0
     max_figuras_tutor: int = 2
+    max_figuras_exercicio: int = 1
 
     # Limites de execução
     kb_k: int = 4
-    react_max_steps: int = 6
+    react_max_steps: int = 8
     max_perguntas_diagnostico: int = 6
     max_rodadas_tutoria: int = 6
     exercicios_por_sessao: int = 8

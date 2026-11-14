@@ -227,3 +227,91 @@ def test_terminal_salva_a_figura_e_mostra_o_caminho(renderer, tmp_path):
     (arquivo,) = (tmp_path / "figuras").glob("*.png")
     assert arquivo.read_bytes() == figura.png
     assert arquivo.name in saida.getvalue()
+
+
+# --- figuras em questões geradas ----------------------------------------------------------
+
+
+def test_questao_gerada_recebe_figura_e_legenda(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=RendererFalso(), figuras_item=[FIGURA])
+    r = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"))
+
+    assert r.fornecimento.exercicios
+    for exercicio in r.fornecimento.exercicios:
+        assert [f.descricao for f in exercicio.figuras] == ["Reta identidade"]
+        assert [i.descricao for i in exercicio.imagens] == ["Reta identidade"]
+        assert "[Figura: Reta identidade]" in exercicio.formatar()
+
+
+def test_questao_gerada_respeita_o_limite_de_figuras(kb, banco, executor, tmp_path):
+    segunda = {"codigo": "plt.plot([1, 0], [0, 1])", "descricao": "Outra reta"}
+    orq, _ = montar(
+        kb,
+        banco,
+        executor,
+        tmp_path,
+        renderer=RendererFalso(),
+        figuras_item=[FIGURA, segunda],
+        max_figuras_exercicio=1,
+    )
+    r = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"))
+
+    for exercicio in r.fornecimento.exercicios:
+        assert [f.descricao for f in exercicio.figuras] == ["Reta identidade"]
+        assert [i.descricao for i in exercicio.imagens] == ["Reta identidade"]
+        assert "Outra reta" not in exercicio.formatar()
+
+
+def test_falha_de_figura_da_questao_mantem_a_legenda(kb, banco, executor, tmp_path):
+    orq, _ = montar(
+        kb,
+        banco,
+        executor,
+        tmp_path,
+        renderer=RendererFalso(falha=True),
+        figuras_item=[FIGURA],
+    )
+    r = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"))
+
+    assert r.fornecimento.exercicios
+    for exercicio in r.fornecimento.exercicios:
+        assert [f.descricao for f in exercicio.figuras] == ["Reta identidade"]
+        assert exercicio.imagens == []
+        assert "[Figura: Reta identidade]" in exercicio.formatar()
+
+
+def test_sem_renderer_a_questao_nao_cita_figura(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, figuras_item=[FIGURA])
+    r = orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"))
+
+    assert r.fornecimento.exercicios
+    for exercicio in r.fornecimento.exercicios:
+        assert exercicio.figuras == [] and exercicio.imagens == []
+        assert "[Figura:" not in exercicio.formatar()
+
+
+def test_terminal_salva_figura_da_questao(renderer, tmp_path, monkeypatch):
+    from io import StringIO
+
+    from rich.console import Console
+
+    from estudai.domain.questoes import Exercicio
+    from estudai.interfaces.console import ConsoleLearner
+
+    figura = renderer.render(PARABOLA)
+    item = Exercicio(
+        id="e1",
+        topico=T,
+        enunciado="Veja a figura.",
+        alternativas=list("abcde"),
+        gabarito="A",
+        descricoes_imagens=[figura.descricao],
+        imagens=[figura],
+    )
+    learner = ConsoleLearner(Console(file=StringIO(), width=300), pasta_figuras=tmp_path / "figuras")
+    monkeypatch.setattr("estudai.interfaces.console.Prompt.ask", lambda *a, **k: "A")
+
+    learner.solve("e1", item)
+
+    (arquivo,) = (tmp_path / "figuras").glob("*.png")
+    assert arquivo.read_bytes() == figura.png

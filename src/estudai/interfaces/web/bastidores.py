@@ -10,6 +10,7 @@ ICONES = {
     TipoProgresso.RESPONDEU: "✅",
     TipoProgresso.FERRAMENTA: "🛠️",
     TipoProgresso.FIGURA: "🖼️",
+    TipoProgresso.NOTA: "ℹ️",
 }
 
 

@@ -98,3 +98,15 @@ def test_cada_figura_emite_um_evento_de_progresso(kb, banco, executor, tmp_path)
     figuras = [e for e in registrados if e.tipo == TipoProgresso.FIGURA]
     assert len(figuras) == 2
     assert "Reta identidade" in figuras[0].descricao and "Outra reta" in figuras[1].descricao
+
+
+def test_figuras_de_questoes_emitem_progresso(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path, renderer=RendererFalso(), figuras_item=[FIGURA])
+    registrados: list[EventoProgresso] = []
+
+    orq.executar_ciclo("ana", T, ScriptedLearner(padrao="certa"), observador=registrados.append)
+
+    figuras = [e for e in registrados if e.tipo == TipoProgresso.FIGURA]
+    assert any(e.agente == "Gerador de Exercícios" and "questão" in e.descricao for e in figuras)
+    notas = [e for e in registrados if e.tipo == TipoProgresso.NOTA]
+    assert any("pediram figura" in e.descricao for e in notas)

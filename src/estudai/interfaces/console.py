@@ -57,6 +57,8 @@ class ConsoleLearner:
     def solve(self, item_id: str, item: ItemObjetivo) -> RespostaAluno:
         # nunca exibe o gabarito
         self._console.print(Panel(item.formatar(com_gabarito=False), title=f"Exercício {item_id}"))
+        for figura in getattr(item, "imagens", []):
+            self._mostrar_figura(figura)
         escolha = Prompt.ask("Alternativa", choices=[*item.letras, *[c.lower() for c in item.letras], ""], default="")
         resolucao = Prompt.ask("Resolução (opcional, ajuda o diagnóstico)", default="")
         return RespostaAluno(item_id=item_id, escolha=escolha.upper() or None, resolucao=resolucao)

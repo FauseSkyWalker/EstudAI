@@ -16,11 +16,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
 from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
+
+# telemetria opcional (ex.: LANGSMITH_*) configurada no .env precisa estar no ambiente do processo
+load_dotenv()
 
 # Em consoles/redirecionamentos não-UTF-8 (cp1252 no Windows), substitui em vez de quebrar
 for _stream in (sys.stdout, sys.stderr):

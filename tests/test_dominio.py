@@ -145,3 +145,16 @@ def test_embaralhar_alternativas_preserva_a_resposta_correta():
         assert embaralhado == item(i).com_alternativas_embaralhadas()  # reprodutível pelo id
     posicoes = Counter(item(i).com_alternativas_embaralhadas().gabarito for i in range(200))
     assert set(posicoes) == {"A", "B", "C", "D", "E"} and max(posicoes.values()) < 70  # sem posição dominante
+
+
+def test_formatar_inclui_descricoes_de_imagens_sem_duplicar():
+    base = dict(id="e", topico=T, alternativas=list("abcde"), gabarito="A")
+    inline = Exercicio(
+        **base,
+        enunciado="Veja [Figura: gráfico de f].",
+        descricoes_imagens=["gráfico de f"],
+    )
+    assert inline.formatar().count("[Figura: gráfico de f]") == 1
+
+    pendente = Exercicio(**base, enunciado="Veja a figura.", descricoes_imagens=["gráfico de f"])
+    assert "[Figura: gráfico de f]" in pendente.formatar()

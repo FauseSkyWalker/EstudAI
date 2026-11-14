@@ -168,8 +168,13 @@ dois tipos:
   interface web.
 
 Se o código falhar, a rodada segue só com o texto e a figura é descartada. A transcrição (lida pelo
-Resumo e pelos juízes) registra a legenda da figura, nunca a imagem. Para desligar:
-`ESTUDAI_FIGURAS=false` no `.env`.
+Resumo e pelos juízes) registra a legenda da figura, nunca a imagem.
+
+Questões **geradas** também podem trazer figuras (até `ESTUDAI_MAX_FIGURAS_EXERCICIO`, padrão 1).
+Como o painel de resolutores, o corretor e o aluno simulado não veem imagens, a legenda entra no
+texto da questão e precisa ser suficiente para resolvê-la sem a figura. Se a renderização falhar,
+a questão continua com a legenda e sem a imagem. Para desligar tudo: `ESTUDAI_FIGURAS=false` no
+`.env`.
 
 ## Experimento (Seção 5.3)
 

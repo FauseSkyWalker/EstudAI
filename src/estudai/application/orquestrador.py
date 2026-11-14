@@ -25,7 +25,7 @@ from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
 from estudai.application.mensageria import MessageLog
 from estudai.application.pratica import ExerciseProvider, ResultadoFornecimento
-from estudai.application.progresso import EVENTO_FIGURA, ObservadorProgresso, ProgressoCallback
+from estudai.application.progresso import EVENTO_FIGURA, EVENTO_NOTA, ObservadorProgresso, ProgressoCallback
 from estudai.application.telemetria import UsageLedger, UsageSummary
 from estudai.application.validacao import ValidadorExercicios
 from estudai.domain.correcao import Correcao, RelatorioPratica, RespostaAluno, acertou
@@ -95,6 +95,7 @@ class Orquestrador:
         ledger: UsageLedger | None = None,
         figuras: FigureRenderer | None = None,
         max_figuras: int = 2,
+        max_figuras_exercicio: int = 1,
     ) -> None:
         self._diagnosticador = diagnosticador
         self._tutores = tutores
@@ -109,6 +110,7 @@ class Orquestrador:
         self._ledger = ledger or UsageLedger()
         self._figuras = figuras  # None = o Tutor não desenha figuras
         self._max_figuras = max_figuras
+        self._max_figuras_exercicio = max_figuras_exercicio
 
     @property
     def config(self) -> ConfigSessao:
@@ -289,7 +291,46 @@ class Orquestrador:
                 TipoMensagem.VALIDACAO,
                 {"aprovado": False, "motivo": descartado.motivo},
             )
-        return fornecimento
+        total = len(fornecimento.exercicios)
+        com_figura = sum(bool(exercicio.figuras) for exercicio in fornecimento.exercicios)
+        _avisar_progresso(
+            {
+                "agente": "Gerador de Exercícios",
+                "descricao": f"{com_figura}/{total} questões geradas pediram figura",
+            },
+            evento=EVENTO_NOTA,
+        )
+        exercicios = [self._draw_exercise_figures(exercicio) for exercicio in fornecimento.exercicios]
+        return fornecimento.model_copy(update={"exercicios": exercicios})
+
+    def _draw_exercise_figures(self, exercicio: Exercicio) -> Exercicio:
+        """Renderiza as figuras da questão aprovada. Falhas omitem só a imagem; as legendas ficam
+        no texto para quem não vê figuras (painel, corretor e aluno simulado)."""
+        if not exercicio.figuras:
+            return exercicio
+        pedidos = exercicio.figuras[: max(0, self._max_figuras_exercicio)]
+        descricoes = [pedido.descricao for pedido in pedidos]
+        if self._figuras is None:
+            return exercicio.model_copy(update={"figuras": [], "imagens": [], "descricoes_imagens": []})
+
+        imagens: list[Figura] = []
+        for indice, pedido in enumerate(pedidos, start=1):
+            _avisar_progresso(
+                {
+                    "agente": "Gerador de Exercícios",
+                    "descricao": f"desenhando figura {indice} da questão {exercicio.id}: {pedido.descricao}",
+                }
+            )
+            try:
+                imagens.append(self._figuras.render(pedido))
+            except Exception as exc:  # noqa: BLE001 - figura não pode descartar a questão
+                _avisar_progresso(
+                    {
+                        "agente": "Gerador de Exercícios",
+                        "descricao": (f"figura {indice} da questão {exercicio.id} descartada ({str(exc)[:120]})"),
+                    }
+                )
+        return exercicio.model_copy(update={"figuras": pedidos, "imagens": imagens, "descricoes_imagens": descricoes})
 
     def _run_practice(
         self, exercicios: list[Exercicio], aluno: Learner, log: MessageLog
@@ -438,8 +479,8 @@ def _format_summary(resumo: ResumoEstudo) -> str:
     return "\n".join(partes)
 
 
-def _avisar_progresso(dados: dict) -> None:
+def _avisar_progresso(dados: dict, *, evento: str = EVENTO_FIGURA) -> None:
     """Evento customizado para o `ProgressoCallback` (só há quem ouça dentro de uma execução do grafo)."""
     # fora de uma execução do LangChain (ex.: chamada direta em testes) não há quem ouça
     with contextlib.suppress(RuntimeError):
-        dispatch_custom_event(EVENTO_FIGURA, dados)
+        dispatch_custom_event(evento, dados)

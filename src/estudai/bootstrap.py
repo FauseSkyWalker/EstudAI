@@ -200,14 +200,18 @@ class Container:
         resolutores = [Resolutor(self.chat(c, Papel.PAINEL_RESOLUTORES)) for c in configs]
         return ValidadorExercicios(PainelResolutores(resolutores), VerificadorSimbolico(self.executor))
 
-    def fornecedor(self, fonte: FonteExercicios, seed: int = 0) -> ExerciseProvider:
+    def fornecedor(self, fonte: FonteExercicios, seed: int = 0, *, com_figuras: bool | None = None) -> ExerciseProvider:
         if fonte == "banco":
             return BankExerciseProvider(self.banco, seed=seed)
+        s = self.settings
+        usar_figuras = s.figuras if com_figuras is None else com_figuras
         gerador = GeradorExercicios(
             self.fronteira(Papel.GERADOR_EXERCICIOS),
             self.conteudo,
             self.executor,
-            max_steps=self.settings.react_max_steps,
+            max_steps=s.react_max_steps,
+            figuras=usar_figuras,
+            max_figuras=s.max_figuras_exercicio,
         )
         return GeneratedExerciseProvider(gerador, self.validador)
 
@@ -240,7 +244,7 @@ class Container:
             conteudo=self.conteudo,
             resumo=AgenteResumo(self.economico(Papel.RESUMO)),
             corretor=Corretor(self.fronteira(Papel.CORRETOR)),
-            fornecedor=self.fornecedor(fonte, seed=config.seed),
+            fornecedor=self.fornecedor(fonte, seed=config.seed, com_figuras=usar_figuras),
             validador=self.validador,
             perfis=perfis or self.perfis(),
             banco=self.banco,
@@ -248,4 +252,5 @@ class Container:
             ledger=self.ledger,
             figuras=self.figuras if usar_figuras else None,
             max_figuras=s.max_figuras_tutor,
+            max_figuras_exercicio=s.max_figuras_exercicio,
         )

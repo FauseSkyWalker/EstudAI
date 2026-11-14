@@ -4,8 +4,10 @@ import random
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from estudai.domain.curriculum import Disciplina, Topico, conceitos_validos
+from estudai.domain.figura import Figura, PedidoFigura
 
 LETRAS = ("A", "B", "C", "D", "E")
 
@@ -29,11 +31,12 @@ class OrigemItem(StrEnum):
 
 
 class ItemObjetivo(BaseModel):
-    """Base comum: enunciado, 4 ou 5 alternativas (Unicamp usa 4) e gabarito por letra."""
+    """Base comum: enunciado, 4 ou 5 alternativas e gabarito por letra."""
 
     enunciado: str
     alternativas: list[str] = Field(min_length=4, max_length=5)
     gabarito: str
+    descricoes_imagens: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _gabarito_valido(self):
@@ -50,7 +53,12 @@ class ItemObjetivo(BaseModel):
         return self.alternativas[self.letras.index(letra.upper())]
 
     def formatar(self, com_gabarito: bool = False) -> str:
-        linhas = [self.enunciado, ""]
+        linhas = [self.enunciado]
+        for descricao in self.descricoes_imagens:
+            marcador = f"[Figura: {descricao}]"
+            if marcador.lower() not in self.enunciado.lower():
+                linhas.append(marcador)
+        linhas.append("")
         linhas += [f"{letra}) {texto}" for letra, texto in zip(self.letras, self.alternativas, strict=True)]
         if com_gabarito:
             linhas += ["", f"Gabarito: {self.gabarito}"]
@@ -70,7 +78,6 @@ class Questao(ItemObjetivo):
     conceitos: list[str] = Field(default_factory=list)
     dificuldade: Dificuldade = Dificuldade.MEDIA
     particao: Particao = Particao.BANCO
-    descricoes_imagens: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _conceitos_do_topico(self):
@@ -89,6 +96,9 @@ class Exercicio(ItemObjetivo):
     origem: OrigemItem = OrigemItem.GERADO
     referencias: list[str] = Field(default_factory=list)
     codigo_verificacao: str | None = None
+    figuras: list[PedidoFigura] = Field(default_factory=list)
+    # Preenchido depois de renderizar `figuras`; fora do schema e dos dumps (imagens são pesadas).
+    imagens: SkipJsonSchema[list[Figura]] = Field(default_factory=list, exclude=True)
 
     @model_validator(mode="after")
     def _conceitos_do_topico(self):

@@ -42,6 +42,7 @@ AGENTES: dict[str, str] = {
 }
 
 EVENTO_FIGURA = "estudai_figura"  # nome do evento customizado emitido ao desenhar figuras
+EVENTO_NOTA = "estudai_nota"  # nome do evento customizado emitido para avisos de progresso
 
 
 class TipoProgresso(StrEnum):
@@ -50,6 +51,7 @@ class TipoProgresso(StrEnum):
     RESPONDEU = "respondeu"  # o modelo respondeu
     FERRAMENTA = "ferramenta"  # um agente usou uma ferramenta
     FIGURA = "figura"  # desenho de figura
+    NOTA = "nota"  # aviso de progresso (ex.: quantas questões pediram figura)
 
 
 class EventoProgresso(BaseModel):
@@ -137,5 +139,9 @@ class ProgressoCallback(BaseCallbackHandler):
         self._emitir(TipoProgresso.FERRAMENTA, descricao, _nome_agente(metadata))
 
     def on_custom_event(self, name, data, *, run_id, metadata=None, **kwargs) -> None:
-        if name == EVENTO_FIGURA and isinstance(data, dict):
+        if not isinstance(data, dict):
+            return
+        if name == EVENTO_FIGURA:
             self._emitir(TipoProgresso.FIGURA, str(data.get("descricao", "")), data.get("agente"))
+        elif name == EVENTO_NOTA:
+            self._emitir(TipoProgresso.NOTA, str(data.get("descricao", "")), data.get("agente"))

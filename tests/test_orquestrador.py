@@ -33,7 +33,12 @@ def _letra_da(request, texto: str) -> str:
     return re.search(rf"^([A-E])\) {re.escape(texto)}$", prompt, re.MULTILINE).group(1)
 
 
-def handlers(corretor_suspeita: bool = False, voto_painel: str = "5", figuras: list[dict] | None = None) -> dict:
+def handlers(
+    corretor_suspeita: bool = False,
+    voto_painel: str = "5",
+    figuras: list[dict] | None = None,
+    figuras_item: list[dict] | None = None,
+) -> dict:
     """`voto_painel` é o TEXTO da alternativa em que o painel vota: as alternativas geradas são
     embaralhadas, então o painel (como o real) resolve pelo conteúdo, não por uma letra fixa."""
 
@@ -78,6 +83,7 @@ def handlers(corretor_suspeita: bool = False, voto_painel: str = "5", figuras: l
                     "gabarito": "B",
                     "resolucao": "2² + 1 = 5",
                     "codigo_verificacao": "print(2**2 + 1)",
+                    "figuras": figuras_item or [],
                 },
                 "call-final",
             )
@@ -110,6 +116,7 @@ def montar(
     voto_revalidacao="5",
     renderer=None,
     max_figuras=2,
+    max_figuras_exercicio=1,
     **kw,
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
@@ -143,6 +150,7 @@ def montar(
         ledger=ledger,
         figuras=renderer,
         max_figuras=max_figuras,
+        max_figuras_exercicio=max_figuras_exercicio,
     )
     return orq, perfis
 

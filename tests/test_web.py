@@ -203,3 +203,26 @@ def test_tela_aceita_figura_mermaid(app):
     app.session_state["sessao"] = sessao
     app.run()
     assert not app.exception
+
+
+def test_tela_mostra_figuras_da_questao(app):
+    item = Exercicio(
+        id="e1",
+        topico=Topico.FUNCOES,
+        enunciado="Veja o gráfico e responda.",
+        alternativas=["2", "4", "6", "8", "10"],
+        gabarito="B",
+        descricoes_imagens=["Gráfico de f(x) = x²"],
+        imagens=[
+            Figura(
+                descricao="Gráfico de f(x) = x²",
+                formato=FormatoFigura.PNG,
+                conteudo=PNG_1PX,
+            )
+        ],
+    )
+    sessao = SessaoFalsa(Pedido(fase=Fase.PRATICA, item_id="e1", item=item))
+    app.session_state["sessao"] = sessao
+    app.run()
+    assert not app.exception
+    assert len(app.get("image")) == 1
