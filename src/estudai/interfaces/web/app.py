@@ -7,7 +7,7 @@ O ciclo roda numa thread (`SessaoWeb`); esta tela só desenha o estado e entrega
 import streamlit as st
 from dotenv import load_dotenv
 
-from estudai.application.orquestrador import ResultadoCiclo
+from estudai.application.cycle.result import ResultadoCiclo
 from estudai.application.sessoes import EventoSessao
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno

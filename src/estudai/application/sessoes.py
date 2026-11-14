@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from estudai.application.orquestrador import ResultadoCiclo
+from estudai.application.cycle.result import ResultadoCiclo
 from estudai.application.progresso import EventoProgresso
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico

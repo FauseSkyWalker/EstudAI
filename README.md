@@ -25,7 +25,7 @@ application/ ──► agents/ ──► ports/ ──► domain/
 | Domínio | `domain/` | Entidades e regras puras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens | — |
 | Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `FigureRenderer`, `Learner` | domínio |
 | Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
-| Aplicação | `application/` | Orquestrador, validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
+| Aplicação | `application/` | Ciclo de estudo (fases), validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
 | Orquestração | `orchestration/` | Grafo LangGraph que ordena as fases do ciclo | domínio, portas, agentes, aplicação |
 | Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão | portas (implementa); `agents.base` no pipeline de ingestão |
 | Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
@@ -49,7 +49,7 @@ Consequências práticas:
 | Agente Gerador de Exercícios (LangChain + ferramentas) | `agents/gerador.py` (ferramentas `consultar_conteudo` e `executar_python`) |
 | Agente Corretor | `agents/corretor.py` (corretude determinística; LLM só diagnostica o raciocínio) |
 | Painel de resolutores + verificação simbólica | `agents/resolutor.py`, `application/validacao.py` |
-| Orquestração centralizada e sequencial | `application/orquestrador.py` |
+| Orquestração centralizada e sequencial | `application/cycle/` (fases) + `orchestration/graph.py` (ordem) |
 | Perfil persistente versionado | `domain/perfil.py`, `infrastructure/persistence/json_profiles.py` |
 | Protocolo de mensagens JSON (Apêndice A) | `domain/mensagens.py`, `application/mensageria.py` |
 | Retry / reenvio com instrução de correção | `agents/base.py` |

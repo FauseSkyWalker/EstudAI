@@ -7,6 +7,7 @@ traduz em `EventoProgresso` legíveis e repassa a um observador (a interface web
 """
 
 import ast
+import contextlib
 import time
 from collections.abc import Callable
 from enum import StrEnum
@@ -14,22 +15,10 @@ from threading import Lock
 from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.callbacks.manager import dispatch_custom_event
 from pydantic import BaseModel, Field
 
-# Etapas do grafo (orchestration/graph.py), na ordem em que aparecem no ciclo
-ETAPAS: dict[str, str] = {
-    "load_profile": "Carregando o perfil",
-    "diagnose": "Diagnóstico",
-    "derive_objective": "Planejando a sessão",
-    "retrieve_material": "Buscando material",
-    "tutor": "Tutoria",
-    "summarize": "Resumo",
-    "provide_exercises": "Gerando exercícios",
-    "practice": "Prática e correção",
-    "update_profile": "Atualizando o perfil",
-    "build_report": "Relatório",
-    "record_episode": "Memória da sessão",
-}
+from estudai.application.cycle.pipeline import ETAPAS
 
 AGENTES: dict[str, str] = {
     "diagnosticador": "Diagnosticador",
@@ -43,6 +32,11 @@ AGENTES: dict[str, str] = {
 
 EVENTO_FIGURA = "estudai_figura"  # nome do evento customizado emitido ao desenhar figuras
 EVENTO_NOTA = "estudai_nota"  # nome do evento customizado emitido para avisos de progresso
+
+
+def notificar_progresso(dados: dict, *, evento: str = EVENTO_FIGURA) -> None:
+    with contextlib.suppress(RuntimeError):
+        dispatch_custom_event(evento, dados)
 
 
 class TipoProgresso(StrEnum):

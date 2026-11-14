@@ -19,7 +19,8 @@ from estudai.agents.gerador import GeradorExercicios
 from estudai.agents.resolutor import Resolutor
 from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
-from estudai.application.orquestrador import ConfigSessao, Orquestrador
+from estudai.application.cycle.config import ConfigSessao
+from estudai.application.orquestrador import Orquestrador
 from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, GeneratedExerciseProvider
 from estudai.application.sessoes import SessionRepository
 from estudai.application.telemetria import UsageLedger

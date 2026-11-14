@@ -174,7 +174,7 @@ def experimento(
     sem_avaliar_itens: bool = False,
 ) -> None:
     """Executa o protocolo experimental da Seção 5.3 com os 3 perfis simulados."""
-    from estudai.application.orquestrador import ConfigSessao
+    from estudai.application.cycle.config import ConfigSessao
     from estudai.application.telemetria import UsageLedger
     from estudai.evaluation.experimento import Condicao, Experimento
     from estudai.evaluation.personas import PERSONAS

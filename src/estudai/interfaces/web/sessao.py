@@ -10,7 +10,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from estudai.application.orquestrador import Orquestrador, ResultadoCiclo
+from estudai.application.cycle.result import ResultadoCiclo
+from estudai.application.orquestrador import Orquestrador
 from estudai.application.progresso import EventoProgresso
 from estudai.application.sessoes import (
     EventoSessao,

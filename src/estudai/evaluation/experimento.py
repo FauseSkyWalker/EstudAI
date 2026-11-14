@@ -16,7 +16,9 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from estudai.agents.base import AgentOutputError
-from estudai.application.orquestrador import ConfigSessao, Orquestrador, ResultadoCiclo
+from estudai.application.cycle.config import ConfigSessao
+from estudai.application.cycle.result import ResultadoCiclo
+from estudai.application.orquestrador import Orquestrador
 from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Mensagem
 from estudai.domain.perfil import NivelDominio
