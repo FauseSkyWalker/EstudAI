@@ -11,7 +11,7 @@ from estudai.application.orquestrador import ResultadoCiclo
 from estudai.application.sessoes import EventoSessao
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno
-from estudai.domain.curriculum import Topico
+from estudai.domain.curriculum import Topico, rotulo_conceito
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.perfil import PerfilAluno
 from estudai.domain.tutoria import TurnoTutor
@@ -123,7 +123,7 @@ def mostrar_perfil(c: Container, aluno: str) -> PerfilAluno | None:
         nivel = estado.nivel.value if estado.nivel else "não diagnosticado"
         st.markdown(f"**{TOPICOS.get(topico, topico)}**: {nivel}")
         if estado.lacunas:
-            st.caption("Lacunas: " + ", ".join(estado.lacunas))
+            st.caption("Lacunas: " + ", ".join(rotulo_conceito(c) for c in estado.lacunas))
     return perfil
 
 
@@ -329,13 +329,13 @@ def _mostrar_resultado(r: ResultadoCiclo, *, concluido: bool = True) -> None:
     acertos = sum(c.correta for c in r.correcoes)
     col1, col2, col3 = st.columns(3)
     col1.metric("Acertos na prática", f"{acertos}/{len(r.correcoes)}")
-    col2.metric("Perfil", f"{r.versao_perfil_final} Avaliações Acumuladas")
+    col2.metric("Perfil", f"Versão {r.versao_perfil_final}")
     col3.metric("Custo", f"US$ {r.uso.total.cost_usd:.3f}")
     if r.diagnostico_final:
         d = r.diagnostico_final
         st.markdown(f"**Nível estimado em {TOPICOS[r.topico]}:** {d.nivel.value}")
         if d.lacunas:
-            st.markdown("**Ainda vale reforçar:** " + ", ".join(d.lacunas))
+            st.markdown("**Ainda vale reforçar:** " + ", ".join(rotulo_conceito(c) for c in d.lacunas))
     if r.relatorio:
         with st.container(border=True):
             st.markdown(f"#### 📊 Relatório\n{markdown_latex(r.relatorio.desempenho)}")

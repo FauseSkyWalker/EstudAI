@@ -68,6 +68,36 @@ CONCEITOS: dict[Topico, tuple[str, ...]] = {
 }
 
 
+ROTULOS_CONCEITOS: dict[str, str] = {
+    "dominio_imagem": "Domínio e imagem",
+    "funcao_afim": "Função afim",
+    "funcao_quadratica": "Função quadrática",
+    "funcao_exponencial": "Função exponencial",
+    "funcao_logaritmica": "Função logarítmica",
+    "composicao_inversa": "Funções compostas e inversas",
+    "principio_contagem": "Princípio da contagem",
+    "permutacoes_combinacoes": "Permutações e combinações",
+    "probabilidade_classica": "Probabilidade clássica",
+    "probabilidade_condicional": "Probabilidade condicional",
+    "eventos_independentes": "Eventos independentes",
+    "movimento_uniforme": "Movimento uniforme",
+    "movimento_uniformemente_variado": "Movimento uniformemente variado",
+    "queda_livre": "Queda livre",
+    "lancamento_obliquo": "Lançamento oblíquo",
+    "movimento_circular": "Movimento circular",
+    "leis_de_newton": "Leis de Newton",
+    "atrito": "Atrito",
+    "plano_inclinado": "Plano inclinado",
+    "trabalho_energia": "Trabalho e energia",
+    "quantidade_de_movimento": "Quantidade de movimento",
+}
+
+
+def rotulo_conceito(conceito: str) -> str:
+    """Rótulo legível para exibição; IDs desconhecidos viram texto simples."""
+    return ROTULOS_CONCEITOS.get(conceito, conceito.replace("_", " "))
+
+
 def topico_do_conceito(conceito: str) -> Topico | None:
     for topico, conceitos in CONCEITOS.items():
         if conceito in conceitos:
