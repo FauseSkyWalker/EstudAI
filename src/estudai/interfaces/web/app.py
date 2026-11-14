@@ -18,10 +18,10 @@ from estudai.domain.tutoria import TurnoTutor
 from estudai.interfaces.web.bastidores import faixa_pipeline, quadro_ao_vivo, registro_completo
 from estudai.interfaces.web.figuras import desenhar_figura
 from estudai.interfaces.web.markdown import markdown_latex
+from estudai.interfaces.web.scroll import controle_scroll
 from estudai.interfaces.web.sessao import EstadoSessao, Evento, Fase, Pedido, SessaoWeb, TipoEvento
 from estudai.settings import Settings
 
-# telemetria opcional (ex.: LANGSMITH_*) configurada no .env precisa estar no ambiente do processo
 load_dotenv()
 
 TOPICOS = {
@@ -267,21 +267,12 @@ def _form_item(sessao: SessaoWeb, pedido: Pedido, *, disabled: bool = False) -> 
 
 
 def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) -> None:
+    """Próxima questão objetiva; o chat do tutor fica no rodapé fixo, fora daqui."""
     if pedido.turno is not None:
-        chave = f"resposta-tutor-{sessao.id}"
-
-        def _responder_tutor() -> None:
-            if sessao.learner.pendente is None:
-                return
-            if texto := st.session_state.get(chave):
-                sessao.learner.responder(texto)
-
-        st.chat_input("Responda ao tutor…", key=chave, on_submit=_responder_tutor)
         return
-
     if pedido.fase != ultima_fase:
         st.subheader(FASES[pedido.fase])
-
+    # na primeira questão, manter o quadro aberto evita que a página encolha quando o formulário aparece
     registro_completo(
         list(pedido.trilha),
         titulo="Bastidores desta questão",
@@ -290,20 +281,38 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
     _form_item(sessao, pedido)
 
 
+def entrada_fixa(sessao: SessaoWeb, estado: EstadoSessao) -> None:
+    """Campo do tutor no footer"""
+    chave = f"resposta-tutor-{sessao.id}"
+    pedido = sessao.learner.pendente
+    if estado == EstadoSessao.AGUARDANDO_ALUNO and pedido is not None and pedido.turno is not None:
+
+        def _responder_tutor() -> None:
+            if sessao.learner.pendente is None:
+                return
+            if texto := st.session_state.get(chave):
+                sessao.learner.responder(texto)
+
+        st.chat_input("Responda ao tutor…", key=chave, on_submit=_responder_tutor)
+    elif estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO):
+        rotulo = "Aguarde os agentes…" if estado == EstadoSessao.TRABALHANDO else "Responda à questão acima…"
+        st.chat_input(rotulo, disabled=True, key=chave)
+
+
 @st.fragment(run_every=1.0)
 def area_agentes(sessao: SessaoWeb, eventos_vistos: int, ultima_fase: Fase | None) -> None:
+    if len(sessao.learner.eventos()) != eventos_vistos:
+        st.rerun()
     if sessao.estado == EstadoSessao.TRABALHANDO:
-        if len(sessao.learner.eventos()) != eventos_vistos:
-            st.rerun()
         quadro_ao_vivo(sessao.progresso_pendente())
         transicao = sessao.learner.pedido_em_transicao
         if transicao is not None and transicao.item is not None:
             st.caption("Resposta enviada; aguardando correção…")
             _form_item(sessao, transicao, disabled=True)
-        else:
-            st.chat_input("Aguarde os agentes…", disabled=True, key=f"resposta-tutor-{sessao.id}")
     elif sessao.estado == EstadoSessao.AGUARDANDO_ALUNO:
-        pedir_resposta(sessao, sessao.learner.pendente, ultima_fase)
+        pedido = sessao.learner.pendente
+        if pedido is not None and pedido.item is not None:
+            pedir_resposta(sessao, pedido, ultima_fase)
     else:
         st.rerun()
 
@@ -388,6 +397,12 @@ def tela_sessao_historica(c: Container, aluno_id: str, sessao_id: str) -> None:
 
 
 def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
+    eventos = sessao.learner.eventos()
+    chave_eventos = f"_eventos_vistos_{sessao.id}"
+    vistos = st.session_state.get(chave_eventos, 0)
+    novos = len(eventos) > vistos
+    st.session_state[chave_eventos] = len(eventos)
+
     st.header(f"{TOPICOS[sessao.topico]} · {sessao.aluno_id}")
     estado = sessao.estado
     em_andamento = estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO)
@@ -412,6 +427,8 @@ def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
         del st.session_state["sessao"]
         st.session_state.pop("sessao_historica", None)
         st.rerun()
+    entrada_fixa(sessao, estado)
+    controle_scroll(novos)
 
 
 def main() -> None:

@@ -33,8 +33,9 @@ class PedidoFigura(BaseModel):
         description=(
             "Para `grafico`: código Python curto com matplotlib (`plt` e `np` já estão importados; não chame "
             "plt.show()/plt.savefig() nem grave arquivos). Para `diagrama`: fonte Mermaid, ex.: "
-            "'flowchart TD\\n  A --> B', sem links ou cliques. Títulos, rótulos e legendas em português."
-            "Sem `$...$`/LaTeX, use matemática em texto simples (ex.: `A[f(x) = ax + b] --> B`)."
+            "'flowchart TD\\n  A --> B', sem links ou cliques. Títulos, rótulos e legendas em português; "
+            "sem `$...$`/LaTeX, use matemática em texto simples e coloque rótulos com parênteses, "
+            'colchetes, chaves, vírgulas ou sinais entre aspas duplas (ex.: `A["f(x) = ax + b"] --> B`).'
         ),
     )
     descricao: str = Field(

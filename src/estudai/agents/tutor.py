@@ -33,8 +33,9 @@ _REGRA_FIGURAS = """- Figuras: o aluno vê imagens. Quando um conceito for visua
   - `tipo="diagrama"` para diagramas conceituais. Escreva fonte Mermaid (flowchart, mindmap, timeline,
     stateDiagram ou classDiagram), com rótulos curtos e sem links/cliques. Em diagramas Mermaid,
     NÃO use `$...$`, `$$...$$` nem LaTeX: escreva a matemática em texto simples e curto
-    (ex.: `f(x) = ax + b`, `a > 0`, `x = -b/2a`). Se a fórmula for complexa, explique-a no texto
-    da resposta em vez de colocá-la no diagrama.
+    (ex.: `f(x) = ax + b`, `a > 0`, `x = -b/2a`). Coloque rótulos com parênteses, colchetes, chaves,
+    vírgulas ou sinais entre aspas duplas, ex.: `F["resolver f(x) = valor"]`. Sem aspas o Mermaid
+    interpreta `(` como forma. Se a fórmula for complexa, explique-a no texto da resposta.
   Use no máximo {max_figuras} figura(s) por rodada, com números coerentes com a explicação. As
   figuras e a descrição não podem revelar a resposta da pergunta de verificação. Deixe `figuras` vazio quando 
   o conceito não for visual ou quando a figura repetir uma anterior.
