@@ -124,6 +124,19 @@ class Agent:
             return schema  # modelo sem essa configuração (ex.: testes): escolha do LangChain
         return ToolStrategy(schema) if metodo == "function_calling" else ProviderStrategy(schema)
 
+    def _tool_agent(self, tools, system_prompt, response_schema):
+        key = (response_schema, system_prompt, tuple(t.name for t in tools))
+        agent = self._tool_agents.get(key)
+        if agent is None:
+            agent = create_agent(
+                self._model,
+                tools=tools,
+                system_prompt=com_regra_idioma(system_prompt),
+                response_format=self._response_strategy(response_schema),
+            )
+            self._tool_agents[key] = agent
+        return agent
+
     def _run_tool_agent(
         self,
         prompt,
@@ -136,18 +149,7 @@ class Agent:
     ):
         """Calls a ReAct model, with a `max_steps` value"""
 
-        # Check created agent cache
-        key = (response_schema, system_prompt, tuple(t.name for t in tools))
-        agent = self._tool_agents.get(key)
-        if agent is None:
-            agent = create_agent(
-                self._model,
-                tools=tools,
-                system_prompt=com_regra_idioma(system_prompt),
-                response_format=self._response_strategy(response_schema),
-            )
-            self._tool_agents[key] = agent
-
+        agent = self._tool_agent(tools, system_prompt, response_schema)
         config = {**self._config(), "recursion_limit": 2 * max_steps + 1}
         if configurable is not None:
             config["configurable"] = configurable

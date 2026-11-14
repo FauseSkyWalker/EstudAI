@@ -67,6 +67,10 @@ class Orquestrador:
     def config(self) -> ConfigSessao:
         return self._config
 
+    @property
+    def deps(self) -> CycleDependencies:
+        return self._deps
+
     def executar_ciclo(
         self,
         aluno_id: str,

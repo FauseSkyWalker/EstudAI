@@ -11,3 +11,5 @@ build/
 # Dados gerados (baixados/indexados) e resultados de experimentos
 data/
 results/
+
+.langgraph_api/

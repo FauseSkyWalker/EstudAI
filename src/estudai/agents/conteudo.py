@@ -86,6 +86,9 @@ class AgenteConteudo(Agent):
             ),
         )
 
+    def grafo_ferramentas(self):
+        return self._tool_agent(self._tools, SYSTEM, SelecaoConteudo)
+
     def _montar(self, ids: list[str], candidates: dict[str, SearchHit], tipo: TipoDocumento) -> list[TrechoRecuperado]:
         do_tipo = {i: h for i, h in candidates.items() if h.document.tipo == tipo}
         escolhidos = [i for i in dict.fromkeys(ids) if i in do_tipo]  # descarta ids inventados

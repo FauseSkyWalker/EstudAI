@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "ciclo_estudai": "./src/estudai/interfaces/studio.py:graph",
+    "agente_conteudo": "./src/estudai/interfaces/studio.py:conteudo_graph"
+  },
+  "env": ".env"
+}
