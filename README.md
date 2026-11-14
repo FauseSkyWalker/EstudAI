@@ -127,9 +127,10 @@ uv run estudai web --porta 8502    # se a porta estiver ocupada
    opcional) e a tutoria como chat. Quando ajuda, o Tutor anexa uma **figura** (gráfico de função,
    s×t/v×t, trajetória, diagrama de forças…) logo abaixo da explicação.
    Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: a faixa do pipeline
-   (✅ etapas concluídas, ▶️ etapa atual) e um quadro com quem está pensando e o que está fazendo
-   (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da parábola”"). Ao fim de cada
-   etapa, o painel **🔍 Bastidores** guarda o registro completo do ciclo.
+   (● etapas concluídas, ▶️ etapa atual) e um quadro com quem está pensando e o que está fazendo
+   (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da parábola”"). O ✅ só aparece
+   quando o ciclo termina. Ao fim de cada mensagem, o painel **🔍 Bastidores** guarda o que
+   aconteceu desde a mensagem anterior.
 3. No fim do ciclo aparecem acertos, nível estimado, relatório e custo; **Novo ciclo** continua no
    mesmo tópico, já adaptado ao que você errou.
 

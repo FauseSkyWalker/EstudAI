@@ -10,7 +10,7 @@ from estudai.application.progresso import EventoProgresso, TipoProgresso
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.figura import Figura, FormatoFigura
-from estudai.domain.notificacao import TipoNotificacao
+from estudai.domain.notificacao import Notificacao, TipoNotificacao
 from estudai.domain.questoes import Exercicio
 from estudai.domain.tutoria import TurnoTutor
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
@@ -57,6 +57,10 @@ def test_ciclo_completo_pela_ponte(kb, banco, executor, tmp_path):
     progresso = sessao.progresso()
     assert {e.etapa for e in progresso if e.tipo == TipoProgresso.ETAPA} >= {"tutor", "practice"}
     assert any(e.agente == "Tutor" and e.tipo == TipoProgresso.PENSANDO for e in progresso)
+    # cada mensagem leva o trace que a produziu; o que sobra fica como trace pendente
+    assert any(e.trilha for e in eventos)
+    anexados = sum(len(e.trilha) for e in eventos)
+    assert anexados + len(sessao.progresso_pendente()) == len(progresso)
 
 
 def test_encerrar_sessao_libera_a_thread(kb, banco, executor, tmp_path):
@@ -73,6 +77,18 @@ def test_responder_sem_pedido_e_erro():
         WebLearner().responder("oi")
 
 
+def test_web_learner_anexa_o_progresso_a_mensagem():
+    progresso: list[EventoProgresso] = []
+    learner = WebLearner(lambda: progresso)
+    progresso.append(EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"))
+
+    learner.notify(Notificacao(tipo=TipoNotificacao.AVISO, texto="oi"))
+
+    evento = learner.eventos()[0]
+    assert [e.descricao for e in evento.trilha] == ["Tutoria"]
+    assert learner.progresso_consumido == 1
+
+
 # --- tela (Streamlit AppTest) -------------------------------------------------------------
 
 
@@ -80,10 +96,11 @@ class SessaoFalsa:
     """Sessão parada num pedido, para testar a tela sem rodar o orquestrador."""
 
     def __init__(self, pedido: Pedido) -> None:
-        self.aluno_id, self.topico, self.learner = "ana", Topico.FUNCOES, WebLearner()
+        self.aluno_id, self.topico = "ana", Topico.FUNCOES
+        self.eventos_progresso = []
+        self.learner = WebLearner(lambda: self.eventos_progresso)
         self.learner._pendente = pedido
         self.resultado = self.erro = None
-        self.eventos_progresso = []
 
     @property
     def estado(self) -> EstadoSessao:
@@ -92,6 +109,9 @@ class SessaoFalsa:
     def cancelar(self) -> None: ...
 
     def progresso(self) -> list:
+        return self.eventos_progresso
+
+    def progresso_pendente(self) -> list:
         return self.eventos_progresso
 
 
@@ -150,18 +170,18 @@ def test_tela_mostra_figura_do_tutor_e_bastidores(app):
         imagens=[Figura(descricao="Parábola com raízes 1 e 3", formato=FormatoFigura.PNG, conteudo=PNG_1PX)],
     )
     sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
-    sessao.learner._registrar(TipoEvento.TUTOR, turno)
     sessao.eventos_progresso = [
         EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"),
         EventoProgresso(tipo=TipoProgresso.PENSANDO, descricao="está pensando", etapa="tutor", agente="Tutor"),
     ]
+    sessao.learner._registrar(TipoEvento.TUTOR, turno)
     app.session_state["sessao"] = sessao
     app.run()
     assert not app.exception
     assert len(app.get("image")) == 1
     legendas = " ".join(c.value for c in app.caption)
     assert "▶️ **Tutoria**" in legendas and "◻️ Relatório" in legendas  # faixa do pipeline
-    assert any("Bastidores" in e.label for e in app.expander)
+    assert any("Bastidores desta mensagem" in e.label for e in app.expander)
 
 
 def test_desenhar_figura_despacha_png_e_mermaid(monkeypatch):
@@ -226,3 +246,75 @@ def test_tela_mostra_figuras_da_questao(app):
     app.run()
     assert not app.exception
     assert len(app.get("image")) == 1
+
+
+def test_faixa_pipeline_so_mostra_check_no_fim(monkeypatch):
+    from estudai.interfaces.web import bastidores
+
+    legendas: list[str] = []
+    monkeypatch.setattr(bastidores.st, "caption", lambda texto: legendas.append(texto))
+    eventos = [
+        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Carregando o perfil", etapa="load_profile"),
+        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"),
+    ]
+
+    bastidores.faixa_pipeline(eventos, em_andamento=True)
+    assert "● Carregando o perfil" in legendas[-1]
+    assert "▶️ **Tutoria**" in legendas[-1]
+    assert "✅" not in legendas[-1]
+
+    bastidores.faixa_pipeline(eventos, em_andamento=False)
+    assert "✅ Carregando o perfil" in legendas[-1]
+    assert "✅ Tutoria" in legendas[-1]
+
+
+def test_quadro_ao_vivo_nao_usa_status(monkeypatch):
+    from estudai.interfaces.web import bastidores
+
+    monkeypatch.setattr(bastidores.st, "status", lambda *a, **k: pytest.fail("st.status não deve ser usado"))
+    legendas: list[str] = []
+    monkeypatch.setattr(bastidores.st, "caption", lambda texto: legendas.append(texto))
+
+    bastidores.quadro_ao_vivo([])
+
+    assert "Preparando o ciclo" in legendas[-1]
+
+
+def test_tela_mantem_campo_do_tutor_visivel_enquanto_agentes_trabalham(app):
+    turno = TurnoTutor(conceito_alvo="funcao_quadratica", explicacao="O vértice...", pergunta_verificacao="Onde fica?")
+    sessao = SessaoFalsa(Pedido(fase=Fase.TUTORIA, turno=turno))
+    sessao.learner._pendente = None  # os agentes estão trabalhando
+    sessao.eventos_progresso = [
+        EventoProgresso(tipo=TipoProgresso.ETAPA, descricao="Tutoria", etapa="tutor"),
+        EventoProgresso(tipo=TipoProgresso.PENSANDO, descricao="está pensando", etapa="tutor", agente="Tutor"),
+    ]
+    app.session_state["sessao"] = sessao
+
+    app.run()
+
+    assert not app.exception
+    assert app.chat_input and app.chat_input[0].disabled
+
+
+def test_quadro_ao_vivo_mostra_todo_o_progresso(monkeypatch):
+    from estudai.interfaces.web import bastidores
+
+    class Caixa:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    linhas: list[str] = []
+    monkeypatch.setattr(bastidores.st, "container", lambda **kwargs: Caixa())
+    monkeypatch.setattr(bastidores.st, "markdown", lambda texto: linhas.append(texto))
+    eventos = [
+        EventoProgresso(tipo=TipoProgresso.PENSANDO, descricao=f"passo {i}", etapa="tutor", agente="Tutor")
+        for i in range(12)
+    ]
+
+    bastidores.quadro_ao_vivo(eventos)
+
+    texto = "\n".join(linhas)
+    assert all(f"passo {i}" in texto for i in range(12))

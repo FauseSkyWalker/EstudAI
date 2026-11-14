@@ -151,6 +151,12 @@ def _desenhar_notificacao(notificacao: Notificacao) -> None:
         st.info(texto)
 
 
+def _titulo_trilha(evento: Evento) -> str:
+    if evento.tipo == TipoEvento.ITEM:
+        return "Bastidores desta questão"
+    return "Bastidores desta mensagem"
+
+
 def historico(sessao: SessaoWeb) -> Fase | None:
     """Desenha os eventos agrupados por fase; devolve a última fase exibida."""
     fase_atual = None
@@ -158,35 +164,52 @@ def historico(sessao: SessaoWeb) -> Fase | None:
         if evento.fase != fase_atual:
             fase_atual = evento.fase
             st.subheader(FASES[fase_atual])
+        # o trace que produziu esta mensagem fica acima dela, em vez de acumular no fim da tela
+        registro_completo(list(evento.trilha), titulo=_titulo_trilha(evento))
         desenhar_evento(evento)
     return fase_atual
 
 
 def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) -> None:
     if pedido.turno is not None:  # o turno já aparece no histórico; falta só a resposta
-        if texto := st.chat_input("Responda ao tutor…"):
-            sessao.learner.responder(texto)
-            st.rerun()
+
+        def _responder_tutor() -> None:
+            if texto := st.session_state.get("resposta-tutor"):
+                sessao.learner.responder(texto)
+
+        # callback em vez de `st.rerun`: o submit já dispara um rerun e não perde a posição da página
+        st.chat_input("Responda ao tutor…", key="resposta-tutor", on_submit=_responder_tutor)
         return
 
     item = pedido.item
     if pedido.fase != ultima_fase:
         st.subheader(FASES[pedido.fase])
+    registro_completo(list(pedido.trilha), titulo="Bastidores desta questão")
+    chave_escolha, chave_resolucao = f"escolha-{pedido.item_id}", f"resolucao-{pedido.item_id}"
+
+    def _responder_item() -> None:
+        sessao.learner.responder(
+            RespostaAluno(
+                item_id=pedido.item_id,
+                escolha=st.session_state.get(chave_escolha),
+                resolucao=st.session_state.get(chave_resolucao, ""),
+            )
+        )
+
     with st.form(key=f"item-{pedido.item_id}", border=True):
         st.markdown(f"**Questão {pedido.item_id}**")
         st.markdown(markdown_latex(item.enunciado))
         for figura in getattr(item, "imagens", []):
             desenhar_figura(figura)
-        escolha = st.radio(
+        st.radio(
             "Alternativas",
             item.letras,
             index=None,
+            key=chave_escolha,
             format_func=lambda letra: markdown_latex(f"{letra}) {item.alternativa(letra)}"),
         )
-        resolucao = st.text_area("Como você resolveu? (opcional — ajuda o diagnóstico)")
-        if st.form_submit_button("Enviar resposta", type="primary"):
-            sessao.learner.responder(RespostaAluno(item_id=pedido.item_id, escolha=escolha, resolucao=resolucao))
-            st.rerun()
+        st.text_area("Como você resolveu? (opcional — ajuda o diagnóstico)", key=chave_resolucao)
+        st.form_submit_button("Enviar resposta", type="primary", on_click=_responder_item)
 
 
 @st.fragment(run_every=1.0)
@@ -195,7 +218,7 @@ def aguardar_agentes(sessao: SessaoWeb, eventos_vistos: int) -> None:
     segundo) e redesenha a página inteira quando a conversa muda."""
     if sessao.estado != EstadoSessao.TRABALHANDO or len(sessao.learner.eventos()) != eventos_vistos:
         st.rerun()
-    quadro_ao_vivo(sessao.progresso())
+    quadro_ao_vivo(sessao.progresso_pendente())
 
 
 def resultado(sessao: SessaoWeb) -> None:
@@ -231,12 +254,15 @@ def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
     em_andamento = estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO)
     faixa_pipeline(sessao.progresso(), em_andamento)
     ultima_fase = historico(sessao)
-    if estado != EstadoSessao.TRABALHANDO:  # trabalhando, o quadro ao vivo já mostra os bastidores
-        registro_completo(sessao.progresso())
+    if estado in (EstadoSessao.CONCLUIDA, EstadoSessao.ERRO, EstadoSessao.CANCELADA):
+        registro_completo(sessao.progresso_pendente(), titulo="Bastidores finais do ciclo")
     if estado == EstadoSessao.AGUARDANDO_ALUNO:
         pedir_resposta(sessao, sessao.learner.pendente, ultima_fase)
     elif estado == EstadoSessao.TRABALHANDO:
         aguardar_agentes(sessao, len(sessao.learner.eventos()))
+        # mantém a altura do rodapé enquanto os agentes trabalham; sem isso o navegador
+        # recolhe a página e volta para o topo quando o campo de resposta some
+        st.chat_input("Aguarde os agentes…", disabled=True, key="resposta-tutor")
     elif estado == EstadoSessao.CONCLUIDA:
         resultado(sessao)
         if st.button("Novo ciclo neste tópico", type="primary"):
@@ -263,4 +289,5 @@ def main() -> None:
         painel_sessao(c, sessao)
 
 
-main()
+if __name__ == "__main__":
+    main()
