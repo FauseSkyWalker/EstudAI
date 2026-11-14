@@ -82,5 +82,9 @@ class Settings(BaseSettings):
         return self.data_dir / "profiles"
 
     @property
+    def sessions_dir(self) -> Path:
+        return self.data_dir / "sessions"
+
+    @property
     def knowledge_db_uri(self) -> Path:
         return self.data_dir / "knowledge_db.lancedb"

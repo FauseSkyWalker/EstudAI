@@ -7,10 +7,13 @@ O ciclo roda numa thread (`SessaoWeb`); esta tela só desenha o estado e entrega
 import streamlit as st
 from dotenv import load_dotenv
 
+from estudai.application.orquestrador import ResultadoCiclo
+from estudai.application.sessoes import EventoSessao
 from estudai.bootstrap import Container
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
+from estudai.domain.perfil import PerfilAluno
 from estudai.domain.tutoria import TurnoTutor
 from estudai.interfaces.web.bastidores import faixa_pipeline, quadro_ao_vivo, registro_completo
 from estudai.interfaces.web.figuras import desenhar_figura
@@ -40,7 +43,7 @@ def container() -> Container:
 
 def barra_lateral(c: Container, sessao: SessaoWeb | None) -> None:
     st.title("📐 EstudAI")
-    st.caption("Tutoria adaptativa em Matemática e Física para vestibulares")
+    st.caption("Sistema de tutoria em exatas para vestibulares")
 
     if sessao is not None and sessao.estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO):
         st.info(f"Sessão em andamento: **{sessao.aluno_id}** · {TOPICOS[sessao.topico]}")
@@ -50,7 +53,7 @@ def barra_lateral(c: Container, sessao: SessaoWeb | None) -> None:
             st.rerun()
         return
 
-    aluno = st.text_input("Seu nome (identifica o seu perfil)", value=st.session_state.get("aluno", ""))
+    aluno = st.text_input("Nome de usuário", value=st.session_state.get("aluno", ""))
     topico = st.selectbox("Tópico", list(TOPICOS), format_func=TOPICOS.get)
     faltando = c.dados_faltando()
     for caminho, comando in faltando:
@@ -58,26 +61,62 @@ def barra_lateral(c: Container, sessao: SessaoWeb | None) -> None:
 
     if st.button("Iniciar sessão", type="primary", width="stretch", disabled=bool(faltando) or not aluno):
         try:
-            nova = SessaoWeb(c.orquestrador(), aluno.strip(), topico).iniciar()
+            nova = SessaoWeb(c.orquestrador(), aluno.strip(), topico, sessoes=c.sessoes()).iniciar()
         except Exception as exc:  # noqa: BLE001 - ex.: credencial ausente
             st.error(f"Não foi possível iniciar: {exc}")
         else:
+            st.session_state.pop("sessao_historica", None)
             st.session_state.update(sessao=nova, aluno=aluno)
             st.rerun()
 
     if aluno:
-        mostrar_perfil(c, aluno.strip())
+        perfil = mostrar_perfil(c, aluno.strip())
+        mostrar_sessoes(c, aluno.strip(), perfil)
 
 
-def mostrar_perfil(c: Container, aluno: str) -> None:
+def mostrar_sessoes(c: Container, aluno: str, perfil: PerfilAluno | None) -> None:
+    try:
+        sessoes = c.sessoes().list(aluno)
+    except ValueError:
+        return
+    st.subheader("Sessões anteriores")
+    if not sessoes:
+        if perfil is not None and perfil.episodios:
+            st.caption("Apenas resumos: as transcrições antigas não foram salvas.")
+            for episodio in reversed(perfil.episodios[-8:]):
+                data = episodio.registrado_em.astimezone().strftime("%d/%m %H:%M")
+                with st.expander(f"{data} · {TOPICOS.get(episodio.topico, episodio.topico)}"):
+                    st.caption(f"{episodio.acertos}/{episodio.respondidos} acertos na prática")
+                    if episodio.pontos_chave:
+                        st.markdown("**Pontos-chave**\n" + "\n".join(f"- {p}" for p in episodio.pontos_chave))
+                    if episodio.proximos_passos:
+                        st.markdown("**Próximos passos**\n" + "\n".join(f"- {p}" for p in episodio.proximos_passos))
+        else:
+            st.caption("Nenhuma sessão concluída ainda.")
+        return
+    for sessao in sessoes:
+        data = sessao.finalizada_em.astimezone().strftime("%d/%m %H:%M")
+        status = "✅" if sessao.objetivo_atingido else "◻️"
+        titulo = f"{status} {data} · {TOPICOS.get(sessao.topico, sessao.topico)}"
+        with st.expander(titulo):
+            st.caption(f"{sessao.acertos}/{sessao.respondidos} acertos na prática")
+            if st.button("Abrir sessão", key=f"abrir-sessao-{sessao.id}", width="stretch"):
+                st.session_state["sessao_historica"] = {
+                    "aluno_id": sessao.aluno_id,
+                    "sessao_id": sessao.id,
+                }
+                st.rerun()
+
+
+def mostrar_perfil(c: Container, aluno: str) -> PerfilAluno | None:
     try:
         perfil = c.perfis().load(aluno)
     except ValueError:
         st.caption("Use só letras, números, `-`, `_` ou `.` no nome.")
-        return
+        return None
     if perfil is None:
-        st.caption("Aluno novo: a primeira sessão começa com um diagnóstico.")
-        return
+        st.caption("Perfil não encontrado: Diagnóstico inicial será aplicado")
+        return None
     st.subheader("Seu perfil")
     st.caption(f"versão {perfil.versao}")
     for topico, estado in perfil.topicos.items():
@@ -85,6 +124,7 @@ def mostrar_perfil(c: Container, aluno: str) -> None:
         st.markdown(f"**{TOPICOS.get(topico, topico)}**: {nivel}")
         if estado.lacunas:
             st.caption("Lacunas: " + ", ".join(estado.lacunas))
+    return perfil
 
 
 # --- área principal -----------------------------------------------------------------------
@@ -93,12 +133,12 @@ def mostrar_perfil(c: Container, aluno: str) -> None:
 def tela_inicial() -> None:
     st.header("Bem-vindo(a)!")
     st.markdown(
-        "Cada sessão é um ciclo completo:\n\n"
-        "1. **Diagnóstico** — algumas questões de vestibular para estimar seu nível (só na primeira vez);\n"
-        "2. **Tutoria** — o tutor explica os pontos que você mais precisa e faz perguntas;\n"
-        "3. **Resumo** — um material de revisão do que foi ensinado;\n"
-        "4. **Prática** — exercícios personalizados, corrigidos com feedback;\n"
-        "5. **Perfil atualizado** — o próximo ciclo se adapta ao que você errou.\n\n"
+        "A aplicação será conduzida em ciclos de aprendizado:\n\n"
+        "1. **Diagnóstico** — algumas questões de vestibular para estimar seu nível inicial\n"
+        "2. **Tutoria** — o tutor explica os pontos que você mais precisa e faz perguntas para testar seu aprendizado\n"
+        "3. **Resumo** — um material de revisão do que foi ensinado\n"
+        "4. **Prática** — exercícios personalizados, corrigidos com feedback dado sua resposta\n"
+        "5. **Perfil atualizado** — o próximo ciclo se adapta ao que você errou\n\n"
         "Escolha seu nome e um tópico na barra lateral para começar."
     )
 
@@ -158,36 +198,40 @@ def _titulo_trilha(evento: Evento) -> str:
 
 
 def historico(sessao: SessaoWeb) -> Fase | None:
-    """Desenha os eventos agrupados por fase; devolve a última fase exibida."""
+    eventos = sessao.learner.eventos()
+    transicao = sessao.learner.pedido_em_transicao if sessao.estado == EstadoSessao.TRABALHANDO else None
+    if transicao is not None and transicao.item_id is not None:
+        # a questão respondida ainda aparece como formulário desabilitado no rodapé
+        eventos = [
+            evento
+            for evento in eventos
+            if not (evento.tipo == TipoEvento.ITEM and evento.conteudo[0] == transicao.item_id)
+        ]
+    return historico_eventos(eventos)
+
+
+def historico_eventos(eventos: list[Evento]) -> Fase | None:
+    """Desenha os eventos agrupados por fase. Devolve a última fase exibida."""
     fase_atual = None
-    for evento in sessao.learner.eventos():
+    for evento in eventos:
         if evento.fase != fase_atual:
             fase_atual = evento.fase
             st.subheader(FASES[fase_atual])
-        # o trace que produziu esta mensagem fica acima dela, em vez de acumular no fim da tela
         registro_completo(list(evento.trilha), titulo=_titulo_trilha(evento))
         desenhar_evento(evento)
     return fase_atual
 
 
-def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) -> None:
-    if pedido.turno is not None:  # o turno já aparece no histórico; falta só a resposta
-
-        def _responder_tutor() -> None:
-            if texto := st.session_state.get("resposta-tutor"):
-                sessao.learner.responder(texto)
-
-        # callback em vez de `st.rerun`: o submit já dispara um rerun e não perde a posição da página
-        st.chat_input("Responda ao tutor…", key="resposta-tutor", on_submit=_responder_tutor)
-        return
-
+def _form_item(sessao: SessaoWeb, pedido: Pedido, *, disabled: bool = False) -> None:
     item = pedido.item
-    if pedido.fase != ultima_fase:
-        st.subheader(FASES[pedido.fase])
-    registro_completo(list(pedido.trilha), titulo="Bastidores desta questão")
-    chave_escolha, chave_resolucao = f"escolha-{pedido.item_id}", f"resolucao-{pedido.item_id}"
+    if item is None:
+        return
+    chave_escolha = f"escolha-{sessao.id}-{pedido.item_id}"
+    chave_resolucao = f"resolucao-{sessao.id}-{pedido.item_id}"
 
     def _responder_item() -> None:
+        if sessao.learner.pendente is None:
+            return
         sessao.learner.responder(
             RespostaAluno(
                 item_id=pedido.item_id,
@@ -196,7 +240,7 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
             )
         )
 
-    with st.form(key=f"item-{pedido.item_id}", border=True):
+    with st.form(key=f"item-{sessao.id}-{pedido.item_id}", border=True):
         st.markdown(f"**Questão {pedido.item_id}**")
         st.markdown(markdown_latex(item.enunciado))
         for figura in getattr(item, "imagens", []):
@@ -206,28 +250,77 @@ def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) 
             item.letras,
             index=None,
             key=chave_escolha,
+            disabled=disabled,
             format_func=lambda letra: markdown_latex(f"{letra}) {item.alternativa(letra)}"),
         )
-        st.text_area("Como você resolveu? (opcional — ajuda o diagnóstico)", key=chave_resolucao)
-        st.form_submit_button("Enviar resposta", type="primary", on_click=_responder_item)
+        st.text_area(
+            "Como você resolveu? (Opcional para melhor diagnóstico)",
+            key=chave_resolucao,
+            disabled=disabled,
+        )
+        st.form_submit_button(
+            "Enviar resposta",
+            type="primary",
+            on_click=None if disabled else _responder_item,
+            disabled=disabled,
+        )
+
+
+def pedir_resposta(sessao: SessaoWeb, pedido: Pedido, ultima_fase: Fase | None) -> None:
+    if pedido.turno is not None:
+        chave = f"resposta-tutor-{sessao.id}"
+
+        def _responder_tutor() -> None:
+            if sessao.learner.pendente is None:
+                return
+            if texto := st.session_state.get(chave):
+                sessao.learner.responder(texto)
+
+        st.chat_input("Responda ao tutor…", key=chave, on_submit=_responder_tutor)
+        return
+
+    if pedido.fase != ultima_fase:
+        st.subheader(FASES[pedido.fase])
+
+    registro_completo(
+        list(pedido.trilha),
+        titulo="Bastidores desta questão",
+        expandido=not sessao.learner.eventos(),
+    )
+    _form_item(sessao, pedido)
 
 
 @st.fragment(run_every=1.0)
-def aguardar_agentes(sessao: SessaoWeb, eventos_vistos: int) -> None:
-    """Enquanto os agentes trabalham, mostra ao vivo quem está fazendo o quê (redesenhado a cada
-    segundo) e redesenha a página inteira quando a conversa muda."""
-    if sessao.estado != EstadoSessao.TRABALHANDO or len(sessao.learner.eventos()) != eventos_vistos:
+def area_agentes(sessao: SessaoWeb, eventos_vistos: int, ultima_fase: Fase | None) -> None:
+    if sessao.estado == EstadoSessao.TRABALHANDO:
+        if len(sessao.learner.eventos()) != eventos_vistos:
+            st.rerun()
+        quadro_ao_vivo(sessao.progresso_pendente())
+        transicao = sessao.learner.pedido_em_transicao
+        if transicao is not None and transicao.item is not None:
+            st.caption("Resposta enviada; aguardando correção…")
+            _form_item(sessao, transicao, disabled=True)
+        else:
+            st.chat_input("Aguarde os agentes…", disabled=True, key=f"resposta-tutor-{sessao.id}")
+    elif sessao.estado == EstadoSessao.AGUARDANDO_ALUNO:
+        pedir_resposta(sessao, sessao.learner.pendente, ultima_fase)
+    else:
         st.rerun()
-    quadro_ao_vivo(sessao.progresso_pendente())
 
 
 def resultado(sessao: SessaoWeb) -> None:
-    r = sessao.resultado
-    st.success("Ciclo concluído! 🎉")
+    _mostrar_resultado(sessao.resultado)
+    if sessao.aviso_historico:
+        st.warning(sessao.aviso_historico)
+
+
+def _mostrar_resultado(r: ResultadoCiclo, *, concluido: bool = True) -> None:
+    if concluido:
+        st.success("Ciclo concluído! 🎉")
     acertos = sum(c.correta for c in r.correcoes)
     col1, col2, col3 = st.columns(3)
     col1.metric("Acertos na prática", f"{acertos}/{len(r.correcoes)}")
-    col2.metric("Perfil", f"v{r.versao_perfil_inicial} → v{r.versao_perfil_final}")
+    col2.metric("Perfil", f"{r.versao_perfil_final} Avaliações Acumuladas")
     col3.metric("Custo", f"US$ {r.uso.total.cost_usd:.3f}")
     if r.diagnostico_final:
         d = r.diagnostico_final
@@ -248,6 +341,52 @@ def resultado(sessao: SessaoWeb) -> None:
         st.warning(f"{len(r.removidos)} exercício(s) removido(s) por gabarito não confirmado pelo painel.")
 
 
+def _evento_de_sessao(evento: EventoSessao) -> Evento:
+    if evento.tipo == TipoEvento.TUTOR:
+        if evento.turno is None:
+            raise ValueError("evento de tutor sem turno")
+        turno = evento.turno.model_copy(update={"imagens": list(evento.turno_imagens)})
+        conteudo = turno
+    elif evento.tipo == TipoEvento.ALUNO:
+        conteudo = evento.aluno or ""
+    elif evento.tipo == TipoEvento.ITEM:
+        if evento.item is None or evento.resposta_item is None:
+            raise ValueError("evento de item incompleto")
+        conteudo = (evento.item.id, evento.item, evento.resposta_item)
+    elif evento.tipo == TipoEvento.NOTIFICACAO:
+        if evento.notificacao is None:
+            raise ValueError("evento de notificação incompleto")
+        conteudo = evento.notificacao.como_notificacao()
+    else:
+        raise ValueError(f"tipo de evento desconhecido: {evento.tipo}")
+    return Evento(tipo=evento.tipo, fase=evento.fase, conteudo=conteudo, trilha=tuple(evento.trilha))
+
+
+def tela_sessao_historica(c: Container, aluno_id: str, sessao_id: str) -> None:
+    try:
+        sessao = c.sessoes().load(aluno_id, sessao_id)
+    except (FileNotFoundError, ValueError) as exc:
+        st.error(f"Não foi possível abrir a sessão: {exc}")
+        if st.button("Voltar ao início"):
+            st.session_state.pop("sessao_historica", None)
+            st.rerun()
+        return
+
+    if st.button("← Voltar ao início"):
+        st.session_state.pop("sessao_historica", None)
+        st.rerun()
+
+    st.header(f"{TOPICOS.get(sessao.topico, sessao.topico)} · {sessao.aluno_id}")
+    st.caption(f"Sessão concluída em {sessao.finalizada_em.astimezone():%d/%m/%Y %H:%M}")
+    try:
+        eventos = [_evento_de_sessao(evento) for evento in sessao.eventos]
+    except ValueError as exc:
+        st.error(f"O histórico desta sessão está incompleto: {exc}")
+        return
+    historico_eventos(eventos)
+    _mostrar_resultado(sessao.resultado, concluido=False)
+
+
 def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
     st.header(f"{TOPICOS[sessao.topico]} · {sessao.aluno_id}")
     estado = sessao.estado
@@ -256,23 +395,22 @@ def painel_sessao(c: Container, sessao: SessaoWeb) -> None:
     ultima_fase = historico(sessao)
     if estado in (EstadoSessao.CONCLUIDA, EstadoSessao.ERRO, EstadoSessao.CANCELADA):
         registro_completo(sessao.progresso_pendente(), titulo="Bastidores finais do ciclo")
-    if estado == EstadoSessao.AGUARDANDO_ALUNO:
-        pedir_resposta(sessao, sessao.learner.pendente, ultima_fase)
-    elif estado == EstadoSessao.TRABALHANDO:
-        aguardar_agentes(sessao, len(sessao.learner.eventos()))
-        # mantém a altura do rodapé enquanto os agentes trabalham; sem isso o navegador
-        # recolhe a página e volta para o topo quando o campo de resposta some
-        st.chat_input("Aguarde os agentes…", disabled=True, key="resposta-tutor")
+    if estado in (EstadoSessao.TRABALHANDO, EstadoSessao.AGUARDANDO_ALUNO):
+        area_agentes(sessao, len(sessao.learner.eventos()), ultima_fase)
     elif estado == EstadoSessao.CONCLUIDA:
         resultado(sessao)
         if st.button("Novo ciclo neste tópico", type="primary"):
-            st.session_state["sessao"] = SessaoWeb(c.orquestrador(), sessao.aluno_id, sessao.topico).iniciar()
+            st.session_state.pop("sessao_historica", None)
+            st.session_state["sessao"] = SessaoWeb(
+                c.orquestrador(), sessao.aluno_id, sessao.topico, sessoes=c.sessoes()
+            ).iniciar()
             st.rerun()
     elif estado == EstadoSessao.ERRO:
         st.error("A sessão falhou. Detalhes abaixo.")
         st.code(sessao.erro)
     if estado in (EstadoSessao.CONCLUIDA, EstadoSessao.ERRO, EstadoSessao.CANCELADA) and st.button("Voltar ao início"):
         del st.session_state["sessao"]
+        st.session_state.pop("sessao_historica", None)
         st.rerun()
 
 
@@ -283,7 +421,10 @@ def main() -> None:
     with st.sidebar:
         barra_lateral(c, sessao)
     sessao = st.session_state.get("sessao")
-    if sessao is None:
+    historica = st.session_state.get("sessao_historica")
+    if sessao is None and historica is not None:
+        tela_sessao_historica(c, historica["aluno_id"], historica["sessao_id"])
+    elif sessao is None:
         tela_inicial()
     else:
         painel_sessao(c, sessao)

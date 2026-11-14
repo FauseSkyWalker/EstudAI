@@ -21,6 +21,7 @@ from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
 from estudai.application.orquestrador import ConfigSessao, Orquestrador
 from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, GeneratedExerciseProvider
+from estudai.application.sessoes import SessionRepository
 from estudai.application.telemetria import UsageLedger
 from estudai.application.validacao import PainelResolutores, ValidadorExercicios, VerificadorSimbolico
 from estudai.domain.curriculum import Disciplina
@@ -33,6 +34,7 @@ from estudai.infrastructure.knowledge.question_bank import JsonlQuestionBank
 from estudai.infrastructure.llm.callbacks import UsageLedgerCallback
 from estudai.infrastructure.llm.factory import build_chat_model
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
+from estudai.infrastructure.persistence.json_sessions import JsonSessionRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
 from estudai.ports.figures import FigureRenderer
 from estudai.ports.knowledge import KnowledgeBase, QuestionBank
@@ -43,10 +45,6 @@ from estudai.settings import ModelConfig, Settings
 
 FonteExercicios = Literal["gerado", "banco"]
 
-# Temperatura é decisão de composição, por papel:
-# - resolutores > 0 para que três instâncias do mesmo modelo sejam amostras independentes
-#   (senão os votos ficam correlacionados e o consenso do painel perde valor);
-# - juízes e classificador em 0 para avaliações reprodutíveis.
 TEMPERATURA: dict[Papel, float] = {
     Papel.DIAGNOSTICADOR: 0.2,
     Papel.TUTOR: 0.4,
@@ -185,6 +183,9 @@ class Container:
 
     def perfis(self, raiz: Path | None = None) -> ProfileRepository:
         return JsonProfileRepository(raiz or self.settings.profiles_dir)
+
+    def sessoes(self, raiz: Path | None = None) -> SessionRepository:
+        return JsonSessionRepository(raiz or self.settings.sessions_dir)
 
     # --- agentes -------------------------------------------------------------------------
 

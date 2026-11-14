@@ -1,20 +1,34 @@
 """Interface web: a ponte thread/fila (`SessaoWeb`) e a tela Streamlit (via AppTest, sem navegador)."""
 
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from test_orquestrador import montar
 
+from estudai.application.orquestrador import ResultadoCiclo
+from estudai.application.pratica import ResultadoFornecimento
 from estudai.application.progresso import EventoProgresso, TipoProgresso
+from estudai.application.sessoes import (
+    EventoSessao,
+    Fase,
+    ItemReplay,
+    SessaoRegistrada,
+    TipoEvento,
+)
+from estudai.application.telemetria import UsageSummary
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.figura import Figura, FormatoFigura
+from estudai.domain.material import PacoteMaterial
 from estudai.domain.notificacao import Notificacao, TipoNotificacao
+from estudai.domain.planejamento import ObjetivoSessao
 from estudai.domain.questoes import Exercicio
-from estudai.domain.tutoria import TurnoTutor
+from estudai.domain.tutoria import Encerramento, TranscricaoTutoria, TurnoTutor
+from estudai.infrastructure.persistence.json_sessions import JsonSessionRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
-from estudai.interfaces.web.sessao import EstadoSessao, Fase, Pedido, SessaoWeb, TipoEvento, WebLearner
+from estudai.interfaces.web.sessao import EstadoSessao, Pedido, SessaoWeb, WebLearner
 
 APP = str(Path(__file__).parents[1] / "src" / "estudai" / "interfaces" / "web" / "app.py")
 FINAIS = (EstadoSessao.CONCLUIDA, EstadoSessao.ERRO, EstadoSessao.CANCELADA)
@@ -96,6 +110,7 @@ class SessaoFalsa:
     """Sessão parada num pedido, para testar a tela sem rodar o orquestrador."""
 
     def __init__(self, pedido: Pedido) -> None:
+        self.id = "teste"
         self.aluno_id, self.topico = "ana", Topico.FUNCOES
         self.eventos_progresso = []
         self.learner = WebLearner(lambda: self.eventos_progresso)
@@ -318,3 +333,141 @@ def test_quadro_ao_vivo_mostra_todo_o_progresso(monkeypatch):
 
     texto = "\n".join(linhas)
     assert all(f"passo {i}" in texto for i in range(12))
+
+
+def _resultado_falso(aluno: str = "ana", topico: Topico = Topico.FUNCOES) -> ResultadoCiclo:
+    objetivo = ObjetivoSessao(topico=topico, conceitos_alvo=["funcao_afim"], nivel_aluno=None, descricao="teste")
+    return ResultadoCiclo(
+        aluno_id=aluno,
+        topico=topico,
+        adaptativo=True,
+        versao_perfil_inicial=0,
+        versao_perfil_final=1,
+        sondagem=[],
+        diagnostico_inicial=None,
+        objetivo=objetivo,
+        material=PacoteMaterial(pedido="material"),
+        transcricao=TranscricaoTutoria(objetivo=objetivo, encerramento=Encerramento.OBJETIVO_ATINGIDO),
+        resumo=None,
+        fornecimento=ResultadoFornecimento(),
+        correcoes=[],
+        removidos=[],
+        diagnostico_final=None,
+        relatorio=None,
+        mensagens=[],
+        uso=UsageSummary(),
+        latencia_s=0.0,
+    )
+
+
+def _registro_falso(
+    aluno: str = "ana",
+    topico: Topico = Topico.FUNCOES,
+    finalizada_em: datetime | None = None,
+) -> SessaoRegistrada:
+    imagem = Figura(descricao="Parábola", formato=FormatoFigura.PNG, conteudo=PNG_1PX)
+    turno = TurnoTutor(
+        conceito_alvo="funcao_afim",
+        explicacao="Mensagem do tutor",
+        pergunta_verificacao="Qual é o coeficiente?",
+        imagens=[imagem],
+    )
+    item = Exercicio(
+        id="e1",
+        topico=topico,
+        enunciado="Quanto é f(2)?",
+        alternativas=["2", "4", "6", "8", "10"],
+        gabarito="B",
+        imagens=[imagem],
+    )
+    return SessaoRegistrada(
+        aluno_id=aluno,
+        topico=topico,
+        iniciada_em=datetime(2026, 1, 1, 10, tzinfo=UTC),
+        finalizada_em=finalizada_em or datetime(2026, 1, 1, 11, tzinfo=UTC),
+        resultado=_resultado_falso(aluno, topico),
+        eventos=[
+            EventoSessao(fase=Fase.TUTORIA, tipo=TipoEvento.TUTOR, turno=turno, turno_imagens=[imagem]),
+            EventoSessao(
+                fase=Fase.PRATICA,
+                tipo=TipoEvento.ITEM,
+                item=ItemReplay.de_item("e1", item),
+                resposta_item=RespostaAluno(item_id="e1", escolha="B"),
+            ),
+        ],
+    )
+
+
+def test_repositorio_de_sessoes_ordena_e_preserva_figuras(tmp_path):
+    repo = JsonSessionRepository(tmp_path / "sessions")
+    antiga = _registro_falso(finalizada_em=datetime(2026, 1, 1, 11, tzinfo=UTC))
+    nova = _registro_falso(finalizada_em=datetime(2026, 1, 2, 11, tzinfo=UTC))
+    repo.save(antiga)
+    repo.save(nova)
+
+    assert [resumo.id for resumo in repo.list("ana")] == [nova.id, antiga.id]
+    carregada = repo.load("ana", nova.id)
+    assert carregada.eventos[0].turno_imagens[0].descricao == "Parábola"
+    assert carregada.eventos[1].item.imagens[0].descricao == "Parábola"
+
+    with pytest.raises(FileExistsError):
+        repo.save(nova)
+    with pytest.raises(ValueError):
+        repo.load("../fora", nova.id)
+
+
+def test_ciclo_concluido_salva_sessao_no_historico(kb, banco, executor, tmp_path):
+    orq, _ = montar(kb, banco, executor, tmp_path)
+    repo = JsonSessionRepository(tmp_path / "sessions")
+    sessao = SessaoWeb(orq, "ana", Topico.FUNCOES, sessoes=repo).iniciar()
+    while (pedido := esperar_pedido(sessao)) is not None:
+        if pedido.turno is not None:
+            sessao.learner.responder("acho que é -b/2a")
+        else:
+            sessao.learner.responder(RespostaAluno(item_id=pedido.item_id, escolha="A"))
+
+    assert sessao.estado == EstadoSessao.CONCLUIDA, sessao.erro
+    resumos = repo.list("ana")
+    assert len(resumos) == 1
+    registro = repo.load("ana", resumos[0].id)
+    assert registro.resultado.aluno_id == "ana"
+    assert any(evento.tipo == TipoEvento.TUTOR for evento in registro.eventos)
+    assert any(evento.tipo == TipoEvento.ITEM for evento in registro.eventos)
+    assert any(evento.tipo == TipoEvento.NOTIFICACAO for evento in registro.eventos)
+
+
+def test_tela_abre_sessao_anterior_em_modo_leitura(app, tmp_path):
+    repo = JsonSessionRepository(tmp_path / "sessions")
+    registro = _registro_falso()
+    repo.save(registro)
+    repo.save(_registro_falso(topico=Topico.DINAMICA, finalizada_em=datetime(2026, 1, 3, 11, tzinfo=UTC)))
+
+    app.session_state["aluno"] = "ana"
+    app.session_state["sessao_historica"] = {"aluno_id": "ana", "sessao_id": registro.id}
+    app.run()
+
+    assert not app.exception
+    assert any("Funções" in header.value for header in app.header)
+    assert any("Mensagem do tutor" in markdown.value for markdown in app.markdown)
+    assert any("Dinâmica" in expander.label for expander in app.expander)
+    assert any(button.label == "← Voltar ao início" for button in app.button)
+
+
+def test_tela_mantem_questao_desabilitada_enquanto_corrige(app):
+    item = Exercicio(
+        id="e1",
+        topico=Topico.FUNCOES,
+        enunciado="Quanto é f(2) para f(x) = x²?",
+        alternativas=["2", "4", "6", "8", "10"],
+        gabarito="B",
+    )  # fmt: skip
+    sessao = SessaoFalsa(Pedido(fase=Fase.PRATICA, item_id="e1", item=item))
+    app.session_state["sessao"] = sessao
+    app.run()
+
+    app.radio[0].set_value("A")
+    next(button for button in app.button if button.label == "Enviar resposta").click().run()
+
+    assert not app.exception
+    assert app.radio[0].disabled
+    assert sessao.learner.pedido_em_transicao is not None

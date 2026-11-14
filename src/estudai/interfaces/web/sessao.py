@@ -1,21 +1,26 @@
-"""Ponte entre o orquestrador e uma interface web.
-
-O orquestrador é síncrono: dentro de `executar_ciclo`, ele bloqueia esperando a resposta do aluno.
-Uma interface web, ao contrário, reexecuta a cada clique. A ponte roda o ciclo numa thread e expõe
-um `Learner` (`WebLearner`) que, quando o orquestrador pede algo ao aluno, publica o pedido e espera
-a resposta numa fila. A tela só lê o estado e entrega respostas; o núcleo não muda nada.
-"""
+"""Ponte entre o orquestrador e uma interface web."""
 
 import queue
 import threading
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 from estudai.application.orquestrador import Orquestrador, ResultadoCiclo
 from estudai.application.progresso import EventoProgresso
+from estudai.application.sessoes import (
+    EventoSessao,
+    Fase,
+    ItemReplay,
+    NotificacaoReplay,
+    SessaoRegistrada,
+    SessionRepository,
+    TipoEvento,
+)
 from estudai.domain.correcao import RespostaAluno
 from estudai.domain.curriculum import Topico
 from estudai.domain.notificacao import Notificacao
@@ -23,25 +28,11 @@ from estudai.domain.questoes import ItemObjetivo, Questao
 from estudai.domain.tutoria import TurnoTutor
 
 
-class Fase(StrEnum):
-    DIAGNOSTICO = "diagnostico"
-    TUTORIA = "tutoria"
-    PRATICA = "pratica"
-
-
-class TipoEvento(StrEnum):
-    TUTOR = "tutor"  # turno do Tutor (TurnoTutor)
-    ALUNO = "aluno"  # resposta do aluno ao Tutor (str)
-    ITEM = "item"  # questão respondida: (item_id, ItemObjetivo, RespostaAluno)
-    NOTIFICACAO = "notificacao"  # notificação tipada do sistema (Notificacao)
-
-
 @dataclass(frozen=True)
 class Evento:
     tipo: TipoEvento
     fase: Fase
     conteudo: Any
-    # Bastidores que produziram esta mensagem (progresso desde a mensagem anterior)
     trilha: tuple[EventoProgresso, ...] = ()
 
 
@@ -74,6 +65,7 @@ class WebLearner:
         self._fase = Fase.DIAGNOSTICO
         self._progresso = progresso or (lambda: [])
         self._progresso_consumido = 0
+        self._pedido_em_transicao: Pedido | None = None
 
     # --- lado do orquestrador (thread do ciclo) ------------------------------------------
 
@@ -110,10 +102,17 @@ class WebLearner:
         with self._lock:
             return self._progresso_consumido
 
+    @property
+    def pedido_em_transicao(self) -> Pedido | None:
+        """Pedido já respondido cujo evento ainda não chegou ao histórico (para segurar o layout)."""
+        with self._lock:
+            return self._pedido_em_transicao
+
     def responder(self, resposta: str | RespostaAluno) -> None:
         with self._lock:
             if self._pendente is None:
                 raise RuntimeError("nenhum pedido pendente")
+            self._pedido_em_transicao = self._pendente
             self._pendente = None
         self._respostas.put(resposta)
 
@@ -139,6 +138,7 @@ class WebLearner:
     def _aguardar(self, pedido: Pedido) -> tuple[Any, Pedido]:
         with self._lock:
             pedido = replace(pedido, trilha=self._consumir_trilha())
+            self._pedido_em_transicao = None
             self._pendente = pedido
         resposta = self._respostas.get()
         if resposta is _CANCELAR:
@@ -164,7 +164,15 @@ class EstadoSessao(StrEnum):
 class SessaoWeb:
     """Um ciclo de estudo rodando em segundo plano."""
 
-    def __init__(self, orquestrador: Orquestrador, aluno_id: str, topico: Topico) -> None:
+    def __init__(
+        self,
+        orquestrador: Orquestrador,
+        aluno_id: str,
+        topico: Topico,
+        *,
+        sessoes: SessionRepository | None = None,
+    ) -> None:
+        self.id = uuid4().hex
         self.aluno_id = aluno_id
         self.topico = topico
         self._progresso: list[EventoProgresso] = []  # bastidores: o que cada agente está fazendo
@@ -172,7 +180,10 @@ class SessaoWeb:
         self.learner = WebLearner(self.progresso)
         self.resultado: ResultadoCiclo | None = None
         self.erro: str | None = None
+        self.aviso_historico: str | None = None
         self._cancelada = False
+        self._iniciada_em = datetime.now(UTC)
+        self._sessoes = sessoes
         self._orquestrador = orquestrador
         self._thread = threading.Thread(target=self._rodar, name=f"ciclo-{aluno_id}", daemon=True)
 
@@ -219,3 +230,54 @@ class SessaoWeb:
             self._cancelada = True
         except Exception as exc:  # noqa: BLE001 - o erro é mostrado na tela, não pode morrer calado
             self.erro = f"{type(exc).__name__}: {exc}\n\n{traceback.format_exc(limit=5)}"
+        else:
+            self._salvar_sessao()
+
+    def _salvar_sessao(self) -> None:
+        if self._sessoes is None or self.resultado is None:
+            return
+        try:
+            self._sessoes.save(
+                SessaoRegistrada(
+                    aluno_id=self.resultado.aluno_id,
+                    topico=self.resultado.topico,
+                    iniciada_em=self._iniciada_em,
+                    finalizada_em=datetime.now(UTC),
+                    resultado=self.resultado,
+                    eventos=[self._evento_para_sessao(evento) for evento in self.learner.eventos()],
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - uma sessão concluída não pode "falhar" por causa do histórico
+            self.aviso_historico = f"Não foi possível salvar a sessão no histórico: {exc}"
+
+    @staticmethod
+    def _evento_para_sessao(evento: Evento) -> EventoSessao:
+        trilha = list(evento.trilha)
+        if evento.tipo == TipoEvento.TUTOR:
+            turno: TurnoTutor = evento.conteudo
+            return EventoSessao(
+                fase=evento.fase,
+                tipo=evento.tipo,
+                turno=turno,
+                turno_imagens=list(turno.imagens),
+                trilha=trilha,
+            )
+        if evento.tipo == TipoEvento.ALUNO:
+            return EventoSessao(fase=evento.fase, tipo=evento.tipo, aluno=str(evento.conteudo), trilha=trilha)
+        if evento.tipo == TipoEvento.ITEM:
+            item_id, item, resposta = evento.conteudo
+            return EventoSessao(
+                fase=evento.fase,
+                tipo=evento.tipo,
+                item=ItemReplay.de_item(item_id, item),
+                resposta_item=resposta,
+                trilha=trilha,
+            )
+        if evento.tipo == TipoEvento.NOTIFICACAO:
+            return EventoSessao(
+                fase=evento.fase,
+                tipo=evento.tipo,
+                notificacao=NotificacaoReplay.de_notificacao(evento.conteudo),
+                trilha=trilha,
+            )
+        raise ValueError(f"tipo de evento desconhecido: {evento.tipo}")

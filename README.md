@@ -126,6 +126,9 @@ uv run estudai web --porta 8502    # se a porta estiver ocupada
 2. Clique em **Iniciar sessão**. As questões aparecem como formulário (alternativas + resolução
    opcional) e a tutoria como chat. Quando ajuda, o Tutor anexa uma **figura** (gráfico de função,
    s×t/v×t, trajetória, diagrama de forças…) logo abaixo da explicação.
+   Sessões concluídas ficam em **Sessões anteriores**, na barra lateral; clique em **Abrir sessão**
+   para revê-las em modo somente leitura. Perfis criados antes desse histórico mostram apenas os
+   resumos já salvos no perfil.
    Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: a faixa do pipeline
    (● etapas concluídas, ▶️ etapa atual) e um quadro com quem está pensando e o que está fazendo
    (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da parábola”"). O ✅ só aparece
