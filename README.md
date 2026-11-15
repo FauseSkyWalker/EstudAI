@@ -1,203 +1,74 @@
 # EstudAI
 
-**Diagnóstico, Ensino e Prática: um Pipeline Multiagente de Tutoria Adaptativa em Matemática e Física**
-MO810A/MC959A — Sistemas Multiagentes com Modelos de Linguagem (IC/UNICAMP, 2026)
-Fause Mascarenhas · Vinícius Faria
+Sistema MultiAgente de Tutoria Adaptativa para Exatas em Vestibulares Brasileiros
+MO810A - IC/UNICAMP - 2026
 
-Implementação da metodologia da Fase 2: seis agentes especializados coordenados por um
-orquestrador centralizado e sequencial sobre um perfil de aluno único, persistente e versionado.
+Este repositório inclui o trabalho prático desenvolvido para a discplina MO810A, envolvendo um sistema de tutoria utilizando arquiteturas multiagentes. As principais capacidades do sistema são, a partir de material didática e questões base, sintetizar material de ensino com diagramas, imagens e exercícios existentes de vestibulares sob demanda, e, dado a tutoria realizada, gerar questões com base em questões anteriores de vestibulares, que são verificadas por LLM juízes e verificação via Python. Os resultados sobre cada ciclo de tutoria e prática são armazenados como memória episódica, o que personaliza ciclos futuros e permite adaptação ao nível do aluno.
 
-## Arquitetura
-
-O código segue Clean Architecture: as dependências apontam para dentro, e só a raiz de
-composição (`bootstrap.py`) conhece as implementações concretas. A exceção é o pipeline de
-ingestão, que reutiliza a base `Agent` para classificar e normalizar questões.
-
-```
-interfaces/ ──► bootstrap.py ──► infrastructure/
-     │                               │
-     ▼                               ▼
-application/ ──► agents/ ──► ports/ ──► domain/
-```
-
-| Camada | Pasta | Responsabilidade | Depende de |
-|---|---|---|---|
-| Domínio | `domain/` | Entidades e regras puras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens | — |
-| Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, `QuestionBank`, `ProfileRepository`, `CodeExecutor`, `FigureRenderer`, `Learner` | domínio |
-| Agentes | `agents/` | Os 6 agentes da Tabela 2 + resolutor do painel; saída estruturada com reparo; ferramentas nativas (LangChain) | domínio, portas |
-| Aplicação | `application/` | Ciclo de estudo (fases), validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) | agentes, domínio, portas |
-| Orquestração | `orchestration/` | Grafo LangGraph que ordena as fases do ciclo | domínio, portas, agentes, aplicação |
-| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão | portas (implementa); `agents.base` no pipeline de ingestão |
-| Avaliação | `evaluation/` | Personas, aluno simulado (DINA + LLM), juízes, experimento C1/C2/C3, estatística | aplicação, portas |
-| Interfaces | `interfaces/` | CLI (`typer`), aluno no terminal e web (Streamlit) | bootstrap |
-
-Consequências práticas:
-- **Trocar de fornecedor de LLM** = um adaptador novo em `infrastructure/llm/` + uma linha em `bootstrap.py`.
-- **Mesmo pipeline em produção e na avaliação**: o orquestrador só conversa com a porta `Learner`,
-  implementada pelo aluno real (`interfaces/console.py`) e pelo simulado (`evaluation/aluno_simulado.py`).
-- **Condições experimentais sem `if` no orquestrador**: C2 é `ConfigSessao(adaptativo=False)`;
-  C3 troca a estratégia `ExerciseProvider` (gerados → banco real).
-
-### Mapeamento metodologia → código
-
-| Metodologia | Código |
-|---|---|
-| Agente Diagnosticador | `agents/diagnosticador.py` (sondagem por cobertura de conceitos + estimativa LLM com fallback determinístico) |
-| Agente Tutor por Disciplina | `agents/tutor.py` (uma instância por `Disciplina`; pode consultar o Agente de Conteúdo uma vez por rodada) |
-| Agente de Conteúdo (LangChain + ferramentas, RAG) | `agents/conteudo.py` (busca semântica/textual/híbrida; só seleciona ids → fidelidade por construção; usado pelo orquestrador, pelo Tutor e pelo Gerador) |
-| Agente de Resumo | `agents/resumo.py` (resumo de revisão + relatório da prática) |
-| Agente Gerador de Exercícios (LangChain + ferramentas) | `agents/gerador.py` (ferramentas `consultar_conteudo` e `executar_python`) |
-| Agente Corretor | `agents/corretor.py` (corretude determinística; LLM só diagnostica o raciocínio) |
-| Painel de resolutores + verificação simbólica | `agents/resolutor.py`, `application/validacao.py` |
-| Orquestração centralizada e sequencial | `application/cycle/` (fases) + `orchestration/graph.py` (ordem) |
-| Perfil persistente versionado | `domain/perfil.py`, `infrastructure/persistence/json_profiles.py` |
-| Protocolo de mensagens JSON (Apêndice A) | `domain/mensagens.py`, `application/mensageria.py` |
-| Retry / reenvio com instrução de correção | `agents/base.py` |
-| Níveis "Fronteira" / "Econômico" | `settings.py` (`frontier`, `economic`), `bootstrap.py` |
-| Sandbox Python (sympy, sem rede, timeout) | `infrastructure/sandbox/python_executor.py` |
-| Bases BLUEX / ENEM Challenge / ENEM 2022–24 | `infrastructure/ingestion/sources.py` |
-| Wikibooks (curadoria manual) | `config/wikibooks.toml`, `infrastructure/ingestion/wikibooks.py` |
-| Estudantes simulados com estado externo | `evaluation/personas.py`, `evaluation/aluno_simulado.py` |
-| Juízes LLM (rubrica de tutoria, qualidade de itens, transição de conceito) | `evaluation/juizes.py` |
-| Condições C1/C2/C3, Wilcoxon, bootstrap, κ | `evaluation/experimento.py`, `evaluation/estatistica.py`, `evaluation/relatorio.py` |
-
-### Ciclo de uma sessão
-
-```
-[diagnóstico inicial]  Diagnosticador escolhe questões do banco → aluno responde → nível/lacunas → perfil v+1
-tutoria                objetivo derivado do perfil → Conteúdo (RAG) → Tutor ⇄ aluno (até objetivo ou limite)
-                       o Tutor pode consultar o Conteúdo mais uma vez por rodada (material novo entra no pacote)
-resumo                 Agente de Resumo → material de revisão
-prática                Gerador (LangChain + ferramentas) → verificação simbólica + painel → itens aprovados
-correção               aluno resolve → Corretor (gabarito suspeito → painel → item removido e notificado)
-atualização            Diagnosticador usa as correções → perfil v+1 → relatório da prática
-```
-
-## Instalação
+## Instalação e execução
 
 ```bash
-uv sync --extra ingest --extra web   # adicione --extra embeddings se usar sentence-transformers
+uv sync --extra ingest --extra web   # adicione --extra embeddings se usar sentence-transformers para geração dos embeddings local
 cp .env.example .env                 # preencha chaves e modelos
+uv run estudai build-index           # constrói base vetorial para busca
+uv run estudai web
+```
+
+(OPCIONAL) Para economizar chamadas de LLM, a rotulação já foi realizada e está inclusa no repositório. Caso deseja re-aplicar o pré-processamento, execute:
+
+```bash
+uv run estudai ingest-wikibooks      # baixa o material didático
+uv run estudai ingest-questions      # baixa, filtra e rotula as questões (utiliza chamadas LLM)
+uv run estudai build-index
 ```
 
 ### Modelos
 
-O `.env.example` já vem com a configuração usada no projeto: **DeepSeek Flash** para os níveis
-econômico e de fronteira, e **Gemini 3 Flash** para os juízes. Cada configuração (`ECONOMIC`,
-`FRONTIER`, `JUDGES`, `PANEL`, `STUDENT`) escolhe um provedor no `.env` (exemplos comentados
-no `.env.example`):
+O `.env.example` já vem com a configuração utilizada para desenvolvimento do projeto: **DeepSeek Flash** para os níveis econômico e de fronteira, e **Gemini 3 Flash** para os juízes.
 
 | `PROVIDER` | Quando usar | Chave |
 |---|---|---|
 | `openai_compat` | DeepSeek ou qualquer endpoint compatível com a OpenAI (preencha `BASE_URL`) | `ESTUDAI_OPENAI_API_KEY` |
-| `gemini` | API do Google (juízes e embeddings; o plano gratuito tem cotas baixas) | `ESTUDAI_GEMINI_API_KEY` |
-| `openrouter` | Um provedor para o chat, com muitos modelos; embeddings continuam no Gemini ou sentence-transformers | `ESTUDAI_OPENROUTER_API_KEY` |
+| `gemini` | API do Google (juízes e embeddings) | `ESTUDAI_GEMINI_API_KEY` |
+| `openrouter` | Plataforma OpenRouter | `ESTUDAI_OPENROUTER_API_KEY` |
 
-Os embeddings da busca usam o Gemini por padrão. Para rodar sem Gemini, use
-`ESTUDAI_EMBEDDING_PROVIDER=sentencetransformers` e instale com `--extra embeddings` (torch).
-Depois de configurar, confira se todos os modelos respondem:
+Os embeddings da busca usam o Gemini por padrão. Porém também é possível utilizar modelos de embedding locais, utilizando `ESTUDAI_EMBEDDING_PROVIDER=sentencetransformers` e instalando com `--extra embeddings` (utiliza o torch).
 
-```bash
-uv run estudai verificar-modelos
-```
+## Uso
 
-## Preparar os dados (uma vez)
+Recomendamos a interface web para interagir com o sistema. Um ciclo de tutoria é composto por:
 
-```bash
-uv run estudai ingest-wikibooks               # baixa e fatia o material didático curado
-uv run estudai ingest-questions               # baixa, filtra e rotula as questões (retomável via cache)
-uv run estudai build-index                    # base vetorial (sem a bateria de avaliação)
-```
+- Diagnóstico: algumas questões de vestibular para estimar seu nível inicial
+- Tutoria: o tutor explica os pontos que você mais precisa e faz perguntas para testar seu aprendizado
+- Resumo: um material de revisão do que foi ensinado
+- Prática: exercícios personalizados, corrigidos com feedback dado sua resposta
+- Atualização do perfil: Preenchimento de memória episódica para o próximo ciclo, que adapta ao que você errou
 
-Para um teste rápido e barato, use `ingest-questions --limite 80`. As interfaces abaixo se recusam
-a iniciar (e dizem qual comando falta) enquanto o banco de questões ou o índice não existirem.
+O repositório foi desenvolvido e testado utilizando o modelo `DeepSeek-V4.1-Flash` para o modelo de fronteira e econômico, providenciado pela API oficial do DeepSeek.
 
-## Interfaces
+### Features
 
-As duas interfaces rodam o mesmo ciclo — diagnóstico (só na primeira sessão do aluno), tutoria,
-resumo, exercícios com correção e perfil atualizado — e salvam o mesmo perfil: dá para começar
-numa e continuar na outra usando o mesmo nome de aluno.
+- **Tutoria Adaptativa**: Seus erros e dúvidas são acompanhados durante a tutoria e questões, e adaptados conformes os ciclos de ensino. Há também a possibilidade de justificar as questões elaboradas para diagnósticos parciais. É possível manualmente inspecionar o perfil persistente de cada aluno em `data/profiles`.
+- **Imagens/Diagramas**: A tutoria e geração de imagens são acompanhadas com a possibilidade para imagens (via matplotlib) e diagramas (via Mermaid), sujeito à capacidade da LLM selecionada para tal. Em caso de erro, a legenda gerada pela LLM é disponibilizada.
+- **Material Didático/Questões**: O sistema parte a partir de material didático existente (via Wikibooks) e questões de vestibulares reais, permitindo que o aluno peça diretamente examplos de ambas as bases de conhecimento. Os geradores de exercícios possuem acesso ao mesmo material, o que permite questões mais similares aos vestibulares reais.
+- **Acompanhamento do sistema**: A interface web permite analisar as ações de cada agente em tempo real.
 
-### Navegador (Streamlit)
+## Limitações
 
-```bash
-uv run estudai web                 # abre http://localhost:8501
-uv run estudai web --porta 8502    # se a porta estiver ocupada
-```
+- A sandbox usa _audit hooks_, ainda possuindo possíveis vulnerabilidades.
+- A verificação simbólica de exercícios confirma apenas itens cuja resposta é um número. Os demais dependem apenas do consenso do painel. Ambas verificações estão sujeita a erros
+- Dado o escopo prático do trabalho, ainda há a necessidade de formalização de rúbricas de ensino e estimação do nível de ensino do aluno.
+- A capacidade de geração de imagens/diagramas e a formatação LaTeX depende da capacidade da LLM utilizada. Observamos que mesmo com LLMs fortes, ainda pode haver erros na formatação.
 
-1. Na barra lateral, digite seu nome (identifica o perfil) e escolha o tópico.
-2. Clique em **Iniciar sessão**. As questões aparecem como formulário (alternativas + resolução
-   opcional) e a tutoria como chat. Quando ajuda, o Tutor anexa uma **figura** (gráfico de função,
-   s×t/v×t, trajetória, diagrama de forças…) logo abaixo da explicação.
-   Sessões concluídas ficam em **Sessões anteriores**, na barra lateral; clique em **Abrir sessão**
-   para revê-las em modo somente leitura. Perfis criados antes desse histórico mostram apenas os
-   resumos já salvos no perfil.
-   Enquanto os agentes trabalham, a tela mostra os **bastidores** ao vivo: um quadro com quem está
-   pensando e o que está fazendo (ex.: "Agente de Conteúdo · busca hibrida na base: “vértice da
-   parábola”"). Ao fim de cada mensagem, o painel **🔍 Bastidores** guarda o que aconteceu desde a
-   mensagem anterior.
-3. No fim do ciclo aparecem acertos, nível estimado, relatório e custo; **Novo ciclo** continua no
-   mesmo tópico, já adaptado ao que você errou.
+## Arquitetura
 
-Para parar o servidor, use **Ctrl+C** no terminal. **Encerrar sessão** (barra lateral) interrompe o
-ciclo em andamento; recarregar a página (F5) também descarta a sessão em andamento, mas o que já
-foi salvo no perfil permanece.
-
-No Windows, feche o Streamlit antes de rodar `uv sync`: com ele aberto, o `uv` não consegue
-substituir os arquivos do ambiente ("arquivo já está sendo usado por outro processo").
-
-### Terminal
-
-```bash
-uv run estudai estudar --aluno ana --topico funcoes   # tópicos: funcoes, probabilidade, cinematica, dinamica
-uv run estudai estudar --aluno ana --topico funcoes --ciclos 2
-uv run estudai perfil ana                             # histórico de versões do perfil
-```
-
-Responda às perguntas do tutor digitando e às questões com a letra da alternativa. **Ctrl+C**
-interrompe (no PowerShell, Ctrl+Z não funciona).
-
-Os bastidores aparecem como linhas discretas (etapa atual, agente e ação); `--no-bastidores`
-desliga. O terminal não exibe imagens: as figuras do Tutor são salvas em
-`data/figuras/<aluno>/` e o caminho do arquivo é impresso para você abrir.
-
-### Figuras dos agentes
-
-O Tutor pode pedir figuras junto com a explicação (até `ESTUDAI_MAX_FIGURAS_TUTOR`, padrão 2). Há
-dois tipos:
-
-- **gráfico**: código matplotlib curto, que roda na mesma **sandbox** da verificação simbólica
-  (subprocesso isolado, sem rede, com escrita em disco bloqueada pelo audit hook e com tempo
-  limite) e volta como PNG. A leitura de arquivos não é bloqueada.
-- **diagrama**: fonte Mermaid (fluxograma, mapa mental, linha do tempo etc.), renderizada
-  nativamente pelo Streamlit. No terminal, diagramas Mermaid não são exibidos nem salvos; use a
-  interface web.
-
-Se o código falhar, a rodada segue só com o texto e a figura é descartada. A transcrição (lida pelo
-Resumo e pelos juízes) registra a legenda da figura, nunca a imagem.
-
-Questões **geradas** também podem trazer figuras (até `ESTUDAI_MAX_FIGURAS_EXERCICIO`, padrão 1).
-Como o painel de resolutores, o corretor e o aluno simulado não veem imagens, a legenda entra no
-texto da questão e precisa ser suficiente para resolvê-la sem a figura. Se a renderização falhar,
-a questão continua com a legenda e sem a imagem. Para desligar tudo: `ESTUDAI_FIGURAS=false` no
-`.env`.
-
-## Experimento (Seção 5.3)
-
-```bash
-uv run estudai experimento --saida results/exp1.jsonl   # 3 condições × 3 personas × 4 tópicos
-uv run estudai relatorio results/exp1.jsonl --orcamento-usd 0.50
-```
-
-O experimento grava cada execução assim que termina; rodar de novo o mesmo comando retoma de onde parou.
-
-## Limitações conhecidas (além das da Seção 5.4)
-
-- A sandbox usa audit hooks (PEP 578), que não são fronteira de segurança contra código
-  adversarial; em produção, rode o executor em contêiner sem rede.
-- A verificação simbólica só confirma itens cuja resposta é um número; os demais dependem
-  apenas do consenso do painel (com limiar de unanimidade, configurável).
-- A base de conhecimento funciona só com BM25 quando não recebe um embedder; nesse caso os
-  modos semântico e híbrido caem para a busca textual.
-- O banco guarda fórmulas em LaTeX (`\(...\)`). A interface web renderiza via Streamlit/KaTeX;
-  no terminal (Rich) os delimitadores aparecem como texto.
+| Camada | Pasta | Responsabilidade | Depende de |
+|---|---|---|---|
+| Domínio | `domain/` | Entidades e regras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens |
+| Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, etc. |
+| Agentes | `agents/` | Implementação dos agentes, saída estruturada com reparo e ferramentas nativas (LangChain) |
+| Aplicação | `application/` | Ciclo de estudo (fases), validação por consenso, estratégias de prática, telemetria, log de mensagens, bastidores (progresso) |
+| Orquestração | `orchestration/` | Grafo LangGraph que ordena as fases do ciclo |
+| Infraestrutura | `infrastructure/` | Gemini, OpenAI-compatível, retry/telemetria, BM25 + vetorial, JSON, sandbox (código e figuras matplotlib), Mermaid, ingestão |
+| Avaliação | `evaluation/` | Personas, aluno simulado, juízes, experimentos C1/C2/C3 da metolodogia |
+| Interfaces | `interfaces/` | Interfaces CLI (`typer`) e web (Streamlit) |
