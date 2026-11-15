@@ -62,8 +62,8 @@ O repositório foi desenvolvido e testado utilizando o modelo `DeepSeek-V4.1-Fla
 
 ## Arquitetura
 
-| Camada | Pasta | Responsabilidade | Depende de |
-|---|---|---|---|
+| Camada | Pasta | Responsabilidade |
+|---|---|---|
 | Domínio | `domain/` | Entidades e regras: currículo, perfil versionado, itens, planejamento determinístico, protocolo de mensagens |
 | Portas | `ports/` | Contratos: `Embedder`, `KnowledgeBase`, etc. |
 | Agentes | `agents/` | Implementação dos agentes, saída estruturada com reparo e ferramentas nativas (LangChain) |
