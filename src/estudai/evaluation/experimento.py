@@ -118,6 +118,7 @@ class Experimento:
                     progresso(f"{chave}: executando")
                     resultado = self.executar_um(condicao, persona, topico)
                     anexar(saida, resultado)
+                    feitos[chave] = resultado
                     resultados.append(resultado)
                     progresso(f"{chave}: ganho={resultado.ganho:+.2f} erro={resultado.erro}")
                     if max_custo_usd is not None and custo_atual is not None and custo_atual() >= max_custo_usd:
