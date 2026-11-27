@@ -1,9 +1,3 @@
-"""Arquivos do experimento: resultados em JSONL (checkpoint) por ciclo
-
-O JSONL de resultados é o checkpoint de retomada. `*_mensagens/` e `*_usage/` guardam,
-por ciclo, a transcrição do protocolo e as chamadas individuais de LLM.
-"""
-
 import json
 from collections.abc import Iterable
 from pathlib import Path

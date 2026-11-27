@@ -1,6 +1,6 @@
-"""Juízes LLM da avaliação (Seções 5.2.1 e 5.2.2), com prompts fixos.
+"""Juízes LLM da avaliação com prompt fixos
 
-Recomenda-se usar juízes de fornecedor diferente do sistema avaliado (Q. Xu, 2026) e mais de
+Recomenda-se usar juízes de fornecedor diferente do sistema avaliado e mais de
 um juiz, para medir a concordância (κ de Fleiss) no relatório.
 """
 

@@ -1,4 +1,4 @@
-"""Análise estatística da Seção 5.3: Wilcoxon pareado, IC por bootstrap, Holm e κ de Cohen/Fleiss."""
+"""Coletânea de funções de análise estatística"""
 
 from collections import Counter
 from collections.abc import Callable, Sequence

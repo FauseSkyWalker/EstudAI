@@ -1,13 +1,3 @@
-"""Estudante simulado com conhecimento controlado externamente (Seção 5.2.2).
-
-- Respostas a itens objetivos: modelo DINA (Deterministic Input, Noisy "And" gate):
-  P(acerto) = 1 - slip se domina TODOS os conceitos do item, senão guess. O sorteio usa
-  números aleatórios comuns por (persona, item, seed): entre pré e pós-teste, a resposta só
-  muda se o estado de conhecimento mudou, o que reduz a variância do ganho medido.
-- Diálogo com o Tutor: um LLM interpreta a persona, restrito ao mapa de conceitos.
-- Transição lacuna -> dominado: decidida fora daqui, por juiz independente (experimento).
-"""
-
 import contextlib
 import random
 import time
@@ -30,8 +20,8 @@ Conceitos que você DOMINA: {dominados}
 Conceitos que você NÃO domina (lacunas): {lacunas}
 Regras de interpretação:
 - Responda como esse estudante, em português informal e curto (1 a 4 frases).
-- Sobre lacunas, cometa erros típicos e plausíveis; só demonstre entendimento parcial se o
-  tutor tiver acabado de explicar o conceito de forma clara nesta conversa.
+- Sobre lacunas, cometa erros típicos e plausíveis. Demonstre entendimento parcial somente se o 
+tutor tiver acabado de explicar o conceito de forma clara nesta conversa.
 - Nunca demonstre conhecimento além do seu perfil."""
 
 

@@ -1,8 +1,4 @@
-"""Os 3 perfis simulados fixos (Seção 5.3), com nível conhecido por tópico.
-
-O estado de conhecimento é um mapa externo de conceitos dominados: é ele, e não o LLM que
-interpreta o aluno, que define o "nível verdadeiro" (evita circularidade, Seção 5.2.2).
-"""
+"""Perfis simulados fixos, com nível conhecido por tópico."""
 
 from pydantic import BaseModel, Field
 
