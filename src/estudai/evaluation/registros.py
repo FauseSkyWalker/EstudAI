@@ -9,7 +9,7 @@ from estudai.application.telemetria import UsageSummary, UsageTotals
 from estudai.application.validacao import ResultadoValidacao
 from estudai.domain.curriculum import Topico
 from estudai.domain.perfil import NivelDominio
-from estudai.evaluation.juizes import AvaliacaoItem, NotasTutoria
+from estudai.evaluation.juizes import AvaliacaoItem, NotasTutoria, VeredictoTransicao
 
 
 class Condicao(StrEnum):
@@ -63,6 +63,7 @@ class TransicaoRegistro(BaseModel):
     na_lacuna: bool
     aprendido: bool
     erro: str | None = None
+    avaliacoes: list[VeredictoTransicao | None] = Field(default_factory=list)
 
 
 class RegistroCiclo(BaseModel):

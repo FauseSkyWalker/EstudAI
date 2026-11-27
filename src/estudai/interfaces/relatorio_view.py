@@ -24,6 +24,7 @@ def imprimir_relatorio(rel: Relatorio, console: Console) -> None:
     console.print(
         f"κ juízes — rubrica: {_fmt(rel.kappa_juizes_rubrica)} "
         f"(diferença ≤ 1 ponto em {_fmt(rel.concordancia_juizes_rubrica)}) · "
+        f"transições: {_fmt(rel.kappa_transicoes)} · "
         f"defeito crítico nos exercícios: {_fmt(rel.kappa_juizes_itens)} · "
         f"κ resolutores: {_fmt(rel.kappa_resolutores)}"
     )

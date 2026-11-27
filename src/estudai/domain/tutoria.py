@@ -58,7 +58,8 @@ class TranscricaoTutoria(BaseModel):
         validados = [c for t in self.trocas for c in t.turno.conceitos_validados]
         return conceitos_validos(self.objetivo.topico, validados)
 
-    def como_texto(self) -> str:
+    def como_texto(self, *, incluir_validados: bool = True) -> str:
+        """`incluir_validados=False` evita a autodeclaração do tutor para avaliação evitar enviesamento do juiz"""
         linhas = []
         for t in self.trocas:
             if t.turno.avaliacao_resposta_anterior:
@@ -67,7 +68,7 @@ class TranscricaoTutoria(BaseModel):
             for figura in t.turno.figuras:  # juízes e resumo precisam saber quais figuras foram mostradas
                 linhas.append(f"TUTOR (figura): {figura.descricao}")
             linhas.append(f"TUTOR (pergunta): {t.turno.pergunta_verificacao}")
-            if t.turno.conceitos_validados:
+            if incluir_validados and t.turno.conceitos_validados:
                 linhas.append(f"TUTOR (conceitos que considerou validados): {', '.join(t.turno.conceitos_validados)}")
             if t.resposta_aluno is not None:
                 linhas.append(f"ALUNO: {t.resposta_aluno}")

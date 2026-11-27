@@ -28,7 +28,7 @@ class VeredictoTransicao(BaseModel):
 
 
 class NotasTutoria(BaseModel):
-    """Rubrica de 4 dimensões adaptada de B. Zhao et al. (2026), escala 1–5."""
+    """Rubrica adaptada de B. Zhao et al. (2026)"""
 
     fidelidade_material: Nota
     personalizacao: Nota
@@ -42,7 +42,7 @@ class NotasTutoria(BaseModel):
 
 
 class AvaliacaoItem(BaseModel):
-    """Qualidade textual e aderência curricular (W. Fu et al., 2024)."""
+    """Qualidade textual e aderência curricular (W. Fu et al., 2024)"""
 
     vinculo_topico: bool
     clareza: Nota
@@ -60,7 +60,8 @@ VALIDOU o entendimento do aluno (fez pergunta de verificação sobre ele e o alu
 corretamente). Seja rigoroso: menção superficial não conta como explicação."""
 
     def avaliar(self, transcricao: TranscricaoTutoria, conceito: str) -> VeredictoTransicao:
-        prompt = f"Conceito: {conceito}\n\nDiálogo:\n{transcricao.como_texto()}"
+        # sem a autodeclaração do tutor: o juiz decide só pelo diálogo, não pela alegação
+        prompt = f"Conceito: {conceito}\n\nDiálogo:\n{transcricao.como_texto(incluir_validados=False)}"
         return self._ask(self.SYSTEM, prompt, VeredictoTransicao)
 
 
@@ -71,7 +72,7 @@ class JuizTutoria(Agent):
 - personalizacao: adapta-se ao nível, às lacunas e às respostas do aluno;
 - aplicabilidade: conecta com resolução de questões de vestibular;
 - profundidade_logica: o raciocínio é encadeado, justifica passos e trata erros conceituais.
-Use a escala inteira; 3 = adequado, 5 = excelente sem ressalvas."""
+Use a escala inteira. 3 = adequado, 5 = excelente sem ressalvas."""
 
     def avaliar(self, transcricao: TranscricaoTutoria, material: PacoteMaterial, perfil: dict) -> NotasTutoria:
         prompt = (
@@ -86,8 +87,8 @@ Use a escala inteira; 3 = adequado, 5 = excelente sem ressalvas."""
 class JuizItem(Agent):
     papel = Papel.JUIZ
     SYSTEM = """Você avalia questões objetivas de vestibular (Matemática/Física). Verifique:
-vínculo com o tópico/conceito-alvo; clareza do enunciado (1–5); plausibilidade dos distratores
-(1–5); ausência de pistas gramaticais/de tamanho; e se há defeito crítico (gabarito errado,
+vínculo com o tópico/conceito-alvo; clareza do enunciado (1-5); plausibilidade dos distratores
+(1-5); ausência de pistas gramaticais/de tamanho; e se há defeito crítico (gabarito errado,
 mais de uma correta, dados faltantes, enunciado insolúvel)."""
 
     def avaliar(self, item: Exercicio) -> AvaliacaoItem:

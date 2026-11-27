@@ -174,3 +174,23 @@ def test_formatar_inclui_descricoes_de_imagens_sem_duplicar():
 
     pendente = Exercicio(**base, enunciado="Veja a figura.", descricoes_imagens=["gráfico de f"])
     assert "[Figura: gráfico de f]" in pendente.formatar()
+
+
+def test_transcricao_omite_autodeclaracao_do_tutor_quando_pedido():
+    from estudai.domain.tutoria import TranscricaoTutoria, TrocaTutoria, TurnoTutor
+
+    objetivo = ObjetivoSessao(topico=T, conceitos_alvo=["funcao_quadratica"], nivel_aluno=None, descricao="")
+    turno = TurnoTutor(
+        conceito_alvo="funcao_quadratica",
+        explicacao="O vértice fica em x = -b/2a.",
+        pergunta_verificacao="Onde fica o vértice?",
+        conceitos_validados=["funcao_quadratica"],
+    )
+    transcricao = TranscricaoTutoria(
+        objetivo=objetivo, trocas=[TrocaTutoria(rodada=1, turno=turno, resposta_aluno="Em -b/2a.")]
+    )
+
+    assert "conceitos que considerou validados" in transcricao.como_texto()
+    sem_autodeclaracao = transcricao.como_texto(incluir_validados=False)
+    assert "conceitos que considerou validados" not in sem_autodeclaracao
+    assert "ALUNO: Em -b/2a." in sem_autodeclaracao

@@ -57,6 +57,7 @@ def para_markdown(rel: Relatorio) -> str:
     linhas.append(f"- κ juízes (rubrica): {_valor(rel.kappa_juizes_rubrica)}")
     linhas.append(f"- concordância adjacente: {_valor(rel.concordancia_juizes_rubrica)}")
     linhas.append(f"- κ juízes (defeito crítico): {_valor(rel.kappa_juizes_itens)}")
+    linhas.append(f"- κ juízes (transições): {_valor(rel.kappa_transicoes)}")
     linhas.append(f"- κ resolutores: {_valor(rel.kappa_resolutores)}")
 
     linhas += ["", "## Critérios", ""]

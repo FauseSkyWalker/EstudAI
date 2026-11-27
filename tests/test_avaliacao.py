@@ -104,6 +104,11 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
     c1 = next(r for r in resultados if r.condicao == Condicao.C1)
     # as lacunas ensinadas e validadas viram conceitos dominados antes da prática e do pós-teste
     assert c1.ciclos[0].conceitos_aprendidos == ["funcao_quadratica", "funcao_exponencial"]
+    # a transição é julgada por todos os juízes; a decisão é do primário e o restante audita
+    transicao = c1.ciclos[0].transicoes[0]
+    assert len(transicao.avaliacoes) == 2
+    assert all(v is not None and v.aprendeu for v in transicao.avaliacoes)
+    assert transicao.aprendido is True
     assert c1.ciclos[0].nivel_verdadeiro_inicial == NivelDominio.INICIANTE
     assert c1.ciclos[0].nivel_verdadeiro_final == NivelDominio.INTERMEDIARIO
     assert c1.ciclos[0].nivel_estimado_final == NivelDominio.INTERMEDIARIO
@@ -132,6 +137,7 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
     rel = gerar_relatorio(resultados)
     assert {c.condicao for c in rel.condicoes} == set(Condicao)
     assert rel.kappa_juizes_rubrica == 1.0
+    assert rel.kappa_transicoes == 1.0
     assert rel.criterios["4_qualidade_tutoria"] is True
     assert rel.comparacoes_ajustadas == 4
     assert {(c.metrica, c.alvo) for c in rel.comparacoes} == {

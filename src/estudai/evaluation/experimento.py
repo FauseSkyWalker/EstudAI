@@ -30,7 +30,7 @@ from estudai.evaluation.artefatos import (
     salvar_snapshot,
 )
 from estudai.evaluation.estatistica import media
-from estudai.evaluation.juizes import JuizItem, JuizTransicao, JuizTutoria
+from estudai.evaluation.juizes import JuizItem, JuizTransicao, JuizTutoria, VeredictoTransicao
 from estudai.evaluation.personas import Persona
 from estudai.evaluation.registros import (
     Condicao,
@@ -70,7 +70,7 @@ class Experimento:
         self._fabrica_perfis = fabrica_perfis
         self._banco = banco
         self._llm_aluno = llm_aluno
-        self._juiz_transicao = JuizTransicao(juizes[0])
+        self._juizes_transicao = [JuizTransicao(j) for j in juizes]
         self._juizes_tutoria = [JuizTutoria(j) for j in juizes]
         self._juizes_item = [JuizItem(j) for j in juizes]
         self._config_base = config_base
@@ -141,9 +141,17 @@ class Experimento:
         def transicionar(transcricao: TranscricaoTutoria, _material) -> None:
             for conceito in transcricao.objetivo.conceitos_alvo:
                 na_lacuna = conceito in aluno.lacunas
-                aprendido, erro = self._avaliar_transicao(transcricao, conceito) if na_lacuna else (False, None)
+                aprendido, avaliacoes, erro = (
+                    self._avaliar_transicao(transcricao, conceito) if na_lacuna else (False, [], None)
+                )
                 transicoes.append(
-                    TransicaoRegistro(conceito=conceito, na_lacuna=na_lacuna, aprendido=aprendido, erro=erro)
+                    TransicaoRegistro(
+                        conceito=conceito,
+                        na_lacuna=na_lacuna,
+                        aprendido=aprendido,
+                        erro=erro,
+                        avaliacoes=avaliacoes,
+                    )
                 )
                 if aprendido:
                     aluno.aprender([conceito])
@@ -268,16 +276,25 @@ class Experimento:
             latencia_s=latencia_s,
         )
 
-    def _avaliar_transicao(self, transcricao: TranscricaoTutoria, conceito: str) -> tuple[bool, str | None]:
+    def _avaliar_transicao(
+        self, transcricao: TranscricaoTutoria, conceito: str
+    ) -> tuple[bool, list[VeredictoTransicao | None], str | None]:
         if not transcricao.trocas:
-            return False, "transcrição vazia"
+            return False, [None] * len(self._juizes_transicao), "transcrição vazia"
         inicio = time.perf_counter()
+        avaliacoes: list[VeredictoTransicao | None] = []
+        erro: str | None = None
         try:
-            return self._juiz_transicao.avaliar(transcricao, conceito).aprendeu, None
-        except AgentOutputError as exc:
-            return False, str(exc)
+            for juiz in self._juizes_transicao:
+                try:
+                    avaliacoes.append(juiz.avaliar(transcricao, conceito))
+                except AgentOutputError as exc:
+                    avaliacoes.append(None)
+                    erro = erro or str(exc)
         finally:
             self._tempo_avaliacao += time.perf_counter() - inicio
+        primario = avaliacoes[0] if avaliacoes else None
+        return (primario.aprendeu if primario is not None else False), avaliacoes, erro
 
 
 def _tentar_todos(fn, juizes: list) -> list:

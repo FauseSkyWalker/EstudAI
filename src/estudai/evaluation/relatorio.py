@@ -71,6 +71,7 @@ class Relatorio(BaseModel):
     kappa_juizes_rubrica: float | None  # Fleiss sobre (sessão × dimensão), notas 1–5
     concordancia_juizes_rubrica: float | None  # fração de notas em que os juízes diferem em até 1 ponto
     kappa_juizes_itens: float | None  # Fleiss sobre `defeito_critico` de cada exercício
+    kappa_transicoes: float | None  # Fleiss sobre a decisão de aprendizagem de cada juiz
     kappa_resolutores: float | None
     criterios: dict[str, bool | None]
 
@@ -264,6 +265,7 @@ def gerar_relatorio(
     # concordância entre juízes (Seção 5.3): cada (sessão, dimensão) e cada exercício é um item
     notas_rubrica = [[getattr(n, d) for n in c.notas_tutoria] for c in ciclos for d in _DIMENSOES]
     defeitos = [[a.defeito_critico for a in item] for c in ciclos for item in c.avaliacoes_itens]
+    transicoes = [[v.aprendeu for v in t.avaliacoes if v is not None] for c in ciclos for t in c.transicoes]
     votos = [v for c in ciclos for v in c.votos_painel]
 
     c1, c2 = resumos.get(Condicao.C1), resumos.get(Condicao.C2)
@@ -295,6 +297,7 @@ def gerar_relatorio(
         kappa_juizes_rubrica=_kappa(notas_rubrica),
         concordancia_juizes_rubrica=_concordancia_adjacente(notas_rubrica),
         kappa_juizes_itens=_kappa(defeitos),
+        kappa_transicoes=_kappa(transicoes),
         kappa_resolutores=_kappa(votos),
         criterios=criterios,
     )
