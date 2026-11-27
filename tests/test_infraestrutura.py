@@ -2,7 +2,7 @@ import pytest
 from fakes import FakeChatModel
 
 from estudai.agents.base import run_config
-from estudai.application.telemetria import UsageLedger
+from estudai.application.telemetria import UsageLedger, UsageRecord
 from estudai.domain.curriculum import Topico
 from estudai.domain.material import TipoDocumento
 from estudai.domain.perfil import PerfilAluno
@@ -157,6 +157,21 @@ def test_bateria_nunca_esvazia_o_banco():
     assert [q.particao for q in separar_bateria(muitas, por_topico=8)].count(Particao.BATERIA) == 8
 
 
+def test_factory_headers_customizados_para_open_code_go():
+    m = build_chat_model(
+        provider="openai_compat",
+        model="deepseek-v4.1-flash",
+        api_key="k",
+        base_url="https://opencode.ai/inference/go/openai/v1",
+        temperature=0,
+        max_retries=0,
+        timeout_s=10,
+        default_headers={"User-Agent": "estudai-eval/1.0", "x-opencode-session": "eval-1"},
+    )
+    assert m.default_headers["x-opencode-session"] == "eval-1"
+    assert m.default_headers["User-Agent"] == "estudai-eval/1.0"
+
+
 def test_factory_openrouter_endpoint_custo_e_metodo_estruturado(monkeypatch):
     from langchain_openai import ChatOpenAI
 
@@ -194,6 +209,39 @@ def test_callback_usa_custo_informado_pelo_openrouter():
         run_id=run_id,
     )
     assert ledger.summary().total.cost_usd == pytest.approx(0.00042)  # e não a tabela de preços
+
+
+def test_ledger_expoe_registros_individuais_por_marca():
+    ledger = UsageLedger()
+    ledger.record(
+        UsageRecord(caller="tutor", model="m", input_tokens=10, output_tokens=2, latency_s=1.0, cost_usd=0.001)
+    )
+    marco = ledger.mark()
+    ledger.record(
+        UsageRecord(caller="juiz", model="j", input_tokens=5, output_tokens=1, latency_s=0.5, cost_usd=0.0002)
+    )
+    assert [r.caller for r in ledger.records(marco)] == ["juiz"]
+    assert [r.caller for r in ledger.records()] == ["tutor", "juiz"]
+
+
+def test_callback_usa_tabela_quando_go_informa_custo_zero():
+    from uuid import uuid4
+
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    ledger = UsageLedger()
+    cb, run_id = UsageLedgerCallback(ledger, price_in=0.15, price_out=0.60), uuid4()
+    cb.on_chat_model_start({}, [[]], run_id=run_id, metadata={"caller": "tutor"})
+    msg = AIMessage("ok", usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})
+    cb.on_llm_end(
+        LLMResult(
+            generations=[[ChatGeneration(message=msg)]],
+            llm_output={"token_usage": {"prompt_tokens": 100, "completion_tokens": 20, "cost": 0}},
+        ),
+        run_id=run_id,
+    )
+    assert ledger.summary().total.cost_usd == pytest.approx((100 * 0.15 + 20 * 0.60) / 1e6)
 
 
 def test_openrouter_exige_chave():

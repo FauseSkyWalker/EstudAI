@@ -48,6 +48,8 @@ def tutor(deps: CycleDependencies, state: CycleState) -> dict[str, Any]:
     transcricao, material_ = tutoring.run_tutoring(
         deps, state["profile"], state["objective"], state["material"], state["learner"], state["log"]
     )
+    if deps.on_tutoring is not None:
+        deps.on_tutoring(transcricao, material_)
     return {"transcript": transcricao, "material": material_}
 
 
@@ -104,7 +106,7 @@ def record_episode(deps: CycleDependencies, state: CycleState) -> dict[str, Any]
 
 
 def needs_diagnosis(deps: CycleDependencies, state: CycleState) -> str:
-    if deps.config.adaptativo and not state["profile"].diagnosticado(state["topic"]):
+    if not state["profile"].diagnosticado(state["topic"]):
         return "diagnose"
     return "derive_objective"
 

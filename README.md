@@ -53,6 +53,20 @@ O repositório foi desenvolvido e testado utilizando o modelo `DeepSeek-V4.1-Fla
 - **Material Didático/Questões**: O sistema parte a partir de material didático existente (via Wikibooks) e questões de vestibulares reais, permitindo que o aluno peça diretamente examplos de ambas as bases de conhecimento. Os geradores de exercícios possuem acesso ao mesmo material, o que permite questões mais similares aos vestibulares reais.
 - **Acompanhamento do sistema**: A interface web permite analisar as ações de cada agente em tempo real.
 
+## Avaliação
+
+O protocolo experimental pode ser encontrado em `evaluation/`. Para executar os experimentos obtidos:
+
+```bash
+uv run estudai verificar-modelos
+uv run estudai experimento --saida results/exp1.jsonl
+uv run estudai relatorio results/exp1.jsonl --saida reports/exp1
+```
+
+O protocolo completo, como descrito na metodologia, usa 2 ciclos × 4 exercícios por tópico. Também é possível usar o comando `relatorio`, que exporta `.json`, `.md` e `.csv`
+
+Artefatos por experimento: `*_mensagens/` (protocolo por ciclo), `*_usage/` (chamadas individuais de LLM), `*_perfis/` (versões do perfil) e `reports/` (agregados)
+
 ## Limitações
 
 - A sandbox usa _audit hooks_, ainda possuindo possíveis vulnerabilidades.

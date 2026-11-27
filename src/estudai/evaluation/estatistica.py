@@ -1,4 +1,4 @@
-"""Análise estatística da Seção 5.3: Wilcoxon pareado, IC por bootstrap e κ de Cohen/Fleiss."""
+"""Análise estatística da Seção 5.3: Wilcoxon pareado, IC por bootstrap, Holm e κ de Cohen/Fleiss."""
 
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -11,7 +11,19 @@ def media(valores: Sequence[float]) -> float | None:
     return float(np.mean(valores)) if len(valores) else None
 
 
+def holm(pvals: Sequence[float]) -> list[float]:
+    """Ajuste de Holm-Bonferroni"""
+    m = len(pvals)
+    ajustados = [1.0] * m
+    anterior = 0.0
+    for rank, indice in enumerate(sorted(range(m), key=lambda i: pvals[i])):
+        anterior = max(anterior, min(1.0, pvals[indice] * (m - rank)))
+        ajustados[indice] = anterior
+    return ajustados
+
+
 def wilcoxon_pareado(a: Sequence[float], b: Sequence[float]) -> dict[str, float]:
+    """Wilcoxon de sinais pareado."""
     diferencas = np.asarray(a, dtype=float) - np.asarray(b, dtype=float)
     resultado = {
         "n": float(len(diferencas)),

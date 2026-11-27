@@ -20,6 +20,7 @@ from estudai.agents.resolutor import Resolutor
 from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
 from estudai.application.cycle.config import ConfigSessao
+from estudai.application.cycle.deps import OnTutoring
 from estudai.application.orquestrador import Orquestrador
 from estudai.application.pratica import BankExerciseProvider, ExerciseProvider, GeneratedExerciseProvider
 from estudai.application.sessoes import SessionRepository
@@ -62,7 +63,7 @@ TEMPERATURA: dict[Papel, float] = {
 
 def _segredo(valor) -> str:
     if valor is None:
-        raise RuntimeError("credencial ausente: defina a chave correspondente no .env")
+        raise RuntimeError("credencial ausente, define a chave no .env")
     return valor.get_secret_value()
 
 
@@ -94,6 +95,7 @@ class Container:
                 api_key=_segredo(chave_api),
                 structured_output_method=config.structured_output_method,
                 extra_body=config.extra_body,
+                default_headers=config.default_headers,
                 temperature=TEMPERATURA[papel],
                 max_retries=s.llm_max_attempts - 1,
                 timeout_s=s.llm_timeout_s,
@@ -222,6 +224,7 @@ class Container:
         fonte: FonteExercicios = "gerado",
         perfis: ProfileRepository | None = None,
         com_figuras: bool | None = None,
+        on_tutoring: OnTutoring | None = None,
     ) -> Orquestrador:
         s = self.settings
         config = config or ConfigSessao(
@@ -256,4 +259,5 @@ class Container:
             figuras=self.figuras if usar_figuras else None,
             max_figuras=s.max_figuras_tutor,
             max_figuras_exercicio=s.max_figuras_exercicio,
+            on_tutoring=on_tutoring,
         )

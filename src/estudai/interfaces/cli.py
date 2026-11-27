@@ -18,7 +18,6 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
-from rich.table import Table
 
 from estudai.domain.curriculum import Topico
 from estudai.domain.mensagens import Papel
@@ -167,17 +166,25 @@ def perfil(aluno: str) -> None:
 @app.command()
 def experimento(
     saida: Annotated[Path, typer.Option(help="Arquivo JSONL de resultados (retomável)")],
-    condicoes: Annotated[list[str], typer.Option()] = ["C1", "C2", "C3"],
+    condicoes: Annotated[
+        list[str], typer.Option(help="Condições a serem aplicadas, sequencialmente: --condicoes C1 --condicoes C2")
+    ] = ["C1", "C2", "C3"],
     topicos: Annotated[list[Topico], typer.Option()] = list(Topico),
-    ciclos: int = 1,
+    personas: Annotated[list[str] | None, typer.Option(help="IDs de persona (vazio = todas)")] = None,
+    ciclos: Annotated[int, typer.Option(help="Ciclos por execução")] = 2,
+    exercicios_por_sessao: Annotated[int, typer.Option(help="Itens de prática por ciclo")] = 4,
+    conceitos_por_sessao: Annotated[int, typer.Option(help="Conceitos-alvo ensinados por ciclo")] = 2,
     seed: int = 0,
     sem_avaliar_itens: bool = False,
+    refazer_falhas: Annotated[bool, typer.Option(help="Reexecuta entradas com erro e regrava o JSONL")] = False,
+    max_custo_usd: Annotated[float | None, typer.Option(help="Interrompe execução ao atingir custo")] = None,
 ) -> None:
     """Executa o protocolo experimental da Seção 5.3 com os 3 perfis simulados."""
     from estudai.application.cycle.config import ConfigSessao
     from estudai.application.telemetria import UsageLedger
-    from estudai.evaluation.experimento import Condicao, Experimento
+    from estudai.evaluation.experimento import Experimento
     from estudai.evaluation.personas import PERSONAS
+    from estudai.evaluation.registros import Condicao
     from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 
     container = _container()
@@ -185,6 +192,11 @@ def experimento(
     s = container.settings
     ledger_avaliacao = UsageLedger()  # aluno simulado e juízes não contam no custo do sistema
     perfis_raiz = saida.parent / f"{saida.stem}_perfis"
+    personas_selecionadas = [p for p in PERSONAS if not personas or p.id in personas]
+    if not personas_selecionadas:
+        console.print("[red]nenhuma persona selecionada[/red]")
+        raise typer.Exit(code=1)
+    condicoes_enum = [Condicao(c) for c in condicoes]
 
     def perfis_novos(aluno_id: str) -> JsonProfileRepository:
         # cada execução começa com um aluno novo (descarta restos de uma execução interrompida)
@@ -192,20 +204,34 @@ def experimento(
         return JsonProfileRepository(perfis_raiz)
 
     exp = Experimento(
-        # aluno simulado/juízes não usam imagens
-        fabrica_orquestrador=lambda cfg, fonte, perfis: container.orquestrador(cfg, fonte, perfis, com_figuras=False),
+        fabrica_orquestrador=lambda cfg, fonte, perfis, on_tutoring=None: container.orquestrador(
+            cfg, fonte, perfis, com_figuras=False, on_tutoring=on_tutoring
+        ),
         fabrica_perfis=perfis_novos,
         banco=container.banco,
         llm_aluno=container.chat(s.student or s.economic, Papel.ALUNO_SIMULADO, ledger_avaliacao),
         juizes=[container.chat(j, Papel.JUIZ, ledger_avaliacao) for j in s.judges],
         config_base=ConfigSessao(
-            max_rodadas_tutoria=s.max_rodadas_tutoria, exercicios_por_sessao=s.exercicios_por_sessao
+            max_rodadas_tutoria=s.max_rodadas_tutoria,
+            exercicios_por_sessao=exercicios_por_sessao,
+            conceitos_por_sessao=conceitos_por_sessao,
         ),
         ciclos=ciclos,
         seed=seed,
         avaliar_itens=not sem_avaliar_itens,
+        ledger_sistema=container.ledger,
+        ledger_avaliacao=ledger_avaliacao,
     )
-    exp.executar([Condicao(c) for c in condicoes], list(PERSONAS), topicos, saida, progresso=console.print)
+    exp.executar(
+        condicoes_enum,
+        personas_selecionadas,
+        topicos,
+        saida,
+        progresso=console.print,
+        refazer_falhas=refazer_falhas,
+        custo_atual=lambda: container.ledger.summary().total.cost_usd + ledger_avaliacao.summary().total.cost_usd,
+        max_custo_usd=max_custo_usd,
+    )
     console.print(f"[green]Resultados em {saida}[/green]")
     console.print(
         f"Custo do sistema: US$ {container.ledger.summary().total.cost_usd:.4f} · "
@@ -214,50 +240,23 @@ def experimento(
 
 
 @app.command()
-def relatorio(arquivo: Path, orcamento_usd: Annotated[float | None, typer.Option()] = None) -> None:
-    """Agrega um JSONL de resultados: métricas, testes de Wilcoxon, κ e critérios de sucesso."""
-    from estudai.evaluation.experimento import carregar_resultados
+def relatorio(
+    arquivo: Path,
+    orcamento_usd: Annotated[float | None, typer.Option()] = None,
+    saida: Annotated[Path | None, typer.Option(help="Prefixo para exportar .json, .md e .csv")] = None,
+) -> None:
+    from estudai.evaluation.artefatos import carregar_resultados
+    from estudai.evaluation.exportacao import exportar
     from estudai.evaluation.relatorio import gerar_relatorio
+    from estudai.interfaces.relatorio_view import imprimir_relatorio
 
-    rel = gerar_relatorio(carregar_resultados(arquivo), orcamento_usd=orcamento_usd)
+    resultados = carregar_resultados(arquivo)
+    rel = gerar_relatorio(resultados, orcamento_usd=orcamento_usd)
+    imprimir_relatorio(rel, console)
 
-    tabela = Table(title="Métricas por condição")
-    colunas = [
-        "condicao",
-        "execucoes",
-        "falhas",
-        "ganho_medio",
-        "rubrica_media",
-        "acuracia_diagnostico",
-        "taxa_descarte",
-        "validade_entregues",
-        "itens_com_defeito_critico",
-        "custo_medio_usd",
-        "latencia_media_s",
-    ]
-    for c in colunas:
-        tabela.add_column(c)
-    for resumo in rel.condicoes:
-        tabela.add_row(*[_fmt(getattr(resumo, c)) for c in colunas])
-    console.print(tabela)
-
-    for comp in rel.comparacoes:
-        console.print(
-            f"Wilcoxon {comp.metrica}: {comp.base} vs {comp.alvo} → "
-            f"p={comp.teste.get('p_valor', float('nan')):.4f} (n={comp.teste['n']:.0f}, "
-            f"mediana Δ={comp.teste['mediana_diferenca']:+.3f})"
-        )
-    console.print(
-        f"κ juízes — rubrica: {_fmt(rel.kappa_juizes_rubrica)} "
-        f"(diferença ≤ 1 ponto em {_fmt(rel.concordancia_juizes_rubrica)}) · "
-        f"defeito crítico nos exercícios: {_fmt(rel.kappa_juizes_itens)} · "
-        f"κ resolutores: {_fmt(rel.kappa_resolutores)}"
-    )
-    if rel.kappa_juizes_rubrica is None:
-        console.print("[dim]κ entre juízes exige 2+ juízes em ESTUDAI_JUDGES.[/dim]")
-    for nome, ok in rel.criterios.items():
-        marca = {True: "[green]atingido[/green]", False: "[red]não atingido[/red]", None: "[dim]n/a[/dim]"}[ok]
-        console.print(f"Critério {nome}: {marca}")
+    if saida is not None:
+        exportar(rel, resultados, saida)
+        console.print(f"[green]Relatório exportado com prefixo {saida}[/green]")
 
 
 @app.command()
@@ -316,14 +315,20 @@ def verificar_modelos() -> None:
         falhas += not ok
         marca = "[green]OK[/green]" if ok else "[red]FALHOU[/red]"
         console.print(f"{marca} {nome:9} {cfg.provider}/{cfg.model}  {detalhe}")
+
+    try:
+        from estudai.ports.knowledge import SearchMode
+
+        hits = container.kb.search("função quadrática", SearchMode.HIBRIDA, k=1, topico=Topico.FUNCOES)
+        if not hits:
+            raise RuntimeError("nenhum resultado na base de conhecimento")
+        console.print(f"[green]OK[/green] knowledge base + embedder  ({hits[0].document.id})")
+    except Exception as exc:  # noqa: BLE001 - diagnóstico
+        falhas += 1
+        console.print(f"[red]FALHOU[/red] knowledge base + embedder  {type(exc).__name__}: {str(exc)[:200]}")
+
     if falhas:
         raise typer.Exit(code=1)
-
-
-def _fmt(valor) -> str:
-    if isinstance(valor, float):
-        return f"{valor:.3f}"
-    return "-" if valor is None else str(valor)
 
 
 def _imprimir_uso(container) -> None:

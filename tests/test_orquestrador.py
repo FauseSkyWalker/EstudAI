@@ -132,6 +132,7 @@ def montar(
     renderer=None,
     max_figuras=2,
     max_figuras_exercicio=1,
+    on_tutoring=None,
     **kw,
 ):
     config = config or ConfigSessao(exercicios_por_sessao=3)
@@ -166,6 +167,7 @@ def montar(
         figuras=renderer,
         max_figuras=max_figuras,
         max_figuras_exercicio=max_figuras_exercicio,
+        on_tutoring=on_tutoring,
     )
     return orq, perfis
 
@@ -238,12 +240,23 @@ def test_perfil_ja_diagnosticado_nao_repete_diagnostico(kb, banco, executor, tmp
     assert segundo.versao_perfil_inicial == primeiro.versao_perfil_final
 
 
-def test_perfil_congelado_nao_diagnostica_nem_persiste(kb, banco, executor, tmp_path):
+def test_hook_pos_tutoria_roda_antes_da_pratica(kb, banco, executor, tmp_path):
+    vistos = []
+    orq, _ = montar(kb, banco, executor, tmp_path, on_tutoring=lambda t, m: vistos.append(t))
+    r = orq.executar_ciclo("hook", T, ScriptedLearner())
+
+    assert len(vistos) == 1  # chamado uma vez, ao fim da tutoria
+    assert vistos[0] is r.transcricao
+    assert vistos[0].conceitos_validados == ["funcao_quadratica", "funcao_exponencial"]
+
+
+def test_perfil_congelado_diagnostica_mas_nao_atualiza(kb, banco, executor, tmp_path):
     orq, perfis = montar(kb, banco, executor, tmp_path, config=ConfigSessao(adaptativo=False, exercicios_por_sessao=2))
     r = orq.executar_ciclo("bia", T, ScriptedLearner())
-    assert r.diagnostico_inicial is None and r.diagnostico_final is None
-    assert r.sondagem == [] and r.versao_perfil_final == 0
-    assert perfis.history("bia") == []
+    # C2 tem linha de base (diagnóstico inicial), mas o perfil não recebe a atualização da prática
+    assert r.diagnostico_inicial is not None and r.diagnostico_final is None
+    assert r.sondagem and r.versao_perfil_final == 1
+    assert [p.motivo for p in perfis.history("bia")] == ["diagnostico_inicial"]
     assert len(r.correcoes) == 2  # a prática acontece normalmente
 
 
@@ -278,7 +291,22 @@ def test_perfil_congelado_nao_grava_memoria(kb, banco, executor, tmp_path):
     orq, perfis = montar(kb, banco, executor, tmp_path, config=ConfigSessao(adaptativo=False, exercicios_por_sessao=1))
     orq.executar_ciclo("caio", T, ScriptedLearner())
     orq.executar_ciclo("caio", T, ScriptedLearner())
-    assert perfis.history("caio") == []  # C2: nem perfil, nem memória
+    historico = perfis.history("caio")
+    assert [p.motivo for p in historico] == ["diagnostico_inicial"]  # C2: perfil congelado, sem memória
+    assert historico[0].episodios == ()
+
+
+def test_banco_nao_repete_questoes_entre_ciclos(banco):
+    from estudai.application.pratica import BankExerciseProvider
+    from estudai.domain.perfil import PerfilAluno
+
+    provider = BankExerciseProvider(banco)
+    ids = []
+    for _ in range(3):
+        resultado = provider.fornecer(PerfilAluno.novo("reuso"), T, 4)
+        ids += [e.id for e in resultado.exercicios]
+
+    assert len(ids) == 12 and len(set(ids)) == 12
 
 
 def test_condicao_banco_usa_questoes_reais_sem_repetir_a_sondagem(kb, banco, executor, tmp_path):

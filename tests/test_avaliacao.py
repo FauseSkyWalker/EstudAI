@@ -7,9 +7,10 @@ from estudai.domain.curriculum import Topico
 from estudai.domain.perfil import NivelDominio
 from estudai.domain.questoes import Particao
 from estudai.evaluation.aluno_simulado import AlunoSimulado
-from estudai.evaluation.estatistica import bootstrap_ic, cohen_kappa, fleiss_kappa, wilcoxon_pareado
-from estudai.evaluation.experimento import Condicao, Experimento
+from estudai.evaluation.estatistica import bootstrap_ic, cohen_kappa, fleiss_kappa, holm, wilcoxon_pareado
+from estudai.evaluation.experimento import Experimento
 from estudai.evaluation.personas import PERSONAS, Persona
+from estudai.evaluation.registros import Condicao
 from estudai.evaluation.relatorio import gerar_relatorio
 from estudai.infrastructure.persistence.json_profiles import JsonProfileRepository
 from estudai.infrastructure.sandbox.python_executor import SubprocessPythonExecutor
@@ -50,6 +51,12 @@ def test_estatisticas():
     assert wilcoxon_pareado([5, 6, 7, 8, 9, 10], [0, 0, 0, 0, 0, 0])["p_valor"] < 0.05
     baixo, alto = bootstrap_ic([1.0, 2.0, 3.0, 4.0])
     assert 1.0 <= baixo < 2.5 < alto <= 4.0
+    # Holm: monotônico, truncado em 1 e de acordo com o exemplo canônico (m = 4)
+    assert holm([0.01, 0.02, 0.03, 0.04]) == pytest.approx([0.04, 0.06, 0.06, 0.06])
+    assert holm([0.3, 0.02]) == pytest.approx([0.3, 0.04])
+    assert holm([0.9, 0.9]) == pytest.approx([1.0, 1.0])  # truncado em 1
+    assert holm([0.2]) == pytest.approx([0.2])
+    assert holm([]) == []
 
 
 def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
@@ -81,9 +88,9 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
         }
     )
     exp = Experimento(
-        fabrica_orquestrador=lambda cfg, fonte, perfis: montar(kb, banco, executor, tmp_path, config=cfg, fonte=fonte)[
-            0
-        ],
+        fabrica_orquestrador=lambda cfg, fonte, perfis, on_tutoring=None: montar(
+            kb, banco, executor, tmp_path, config=cfg, fonte=fonte, on_tutoring=on_tutoring
+        )[0],
         fabrica_perfis=lambda aluno_id: JsonProfileRepository(tmp_path / "perfis"),
         banco=banco,
         llm_aluno=None,
@@ -95,19 +102,28 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
 
     assert [r.erro for r in resultados] == [None, None, None]
     c1 = next(r for r in resultados if r.condicao == Condicao.C1)
-    # as lacunas ensinadas e validadas viram conceitos dominados antes do pós-teste
+    # as lacunas ensinadas e validadas viram conceitos dominados antes da prática e do pós-teste
     assert c1.ciclos[0].conceitos_aprendidos == ["funcao_quadratica", "funcao_exponencial"]
-    assert c1.ciclos[0].nivel_estimado == NivelDominio.INTERMEDIARIO
+    assert c1.ciclos[0].nivel_verdadeiro_inicial == NivelDominio.INICIANTE
+    assert c1.ciclos[0].nivel_verdadeiro_final == NivelDominio.INTERMEDIARIO
+    assert c1.ciclos[0].nivel_estimado_final == NivelDominio.INTERMEDIARIO
+    # snapshot do item inclui a resolução e o código de verificação do gerador
+    assert c1.ciclos[0].itens[0].resolucao == "2² + 1 = 5"
+    assert c1.ciclos[0].itens[0].codigo_verificacao == "print(2**2 + 1)"
+    # custo por agente do sistema é persistido no ciclo
+    assert "gerador_exercicios" in c1.ciclos[0].uso_por_agente
 
     # auditoria: as mensagens do protocolo de cada ciclo ficam num JSONL ao lado dos resultados
     from estudai.domain.mensagens import TipoMensagem
-    from estudai.evaluation.experimento import carregar_mensagens
+    from estudai.evaluation.artefatos import carregar_mensagens
 
     registro = c1.ciclos[0]
     assert registro.arquivo_mensagens.startswith("resultados_mensagens/")
     mensagens = carregar_mensagens(saida, registro)
     assert len(mensagens) == registro.mensagens > 0
     assert {TipoMensagem.TUTORIA, TipoMensagem.EXERCICIO, TipoMensagem.CORRECAO} <= {m.tipo for m in mensagens}
+    assert registro.arquivo_usage.startswith("resultados_usage/")
+    assert (saida.parent / registro.arquivo_usage).exists()
 
     # retomada: rodar de novo não reexecuta nada
     assert len(exp.executar(list(Condicao), [PERSONAS[0]], [T], saida)) == 3
@@ -117,13 +133,54 @@ def test_experimento_ponta_a_ponta_e_relatorio(kb, banco, tmp_path):
     assert {c.condicao for c in rel.condicoes} == set(Condicao)
     assert rel.kappa_juizes_rubrica == 1.0
     assert rel.criterios["4_qualidade_tutoria"] is True
+    assert rel.comparacoes_ajustadas == 4
     assert {(c.metrica, c.alvo) for c in rel.comparacoes} == {
         ("ganho", Condicao.C2),
         ("rubrica", Condicao.C2),
         ("ganho", Condicao.C3),
         ("rubrica", Condicao.C3),
     }
+    # métricas derivadas são calculadas, não armazenadas em dobro
+    c1_resumo = next(c for c in rel.condicoes if c.condicao == Condicao.C1)
+    assert c1_resumo.taxa_descarte is not None
+    assert c1_resumo.taxa_aprovacao_filtro == pytest.approx(1 - c1_resumo.taxa_descarte)
+    assert c1_resumo.itens_com_defeito_critico is not None
+    assert c1_resumo.validacao_auditada == pytest.approx(1 - c1_resumo.itens_com_defeito_critico)
+
+    # exportação: JSON completo, CSV por execução e Markdown legível
+    from estudai.evaluation.exportacao import exportar
+
+    prefixo = tmp_path / "relatorio"
+    exportar(rel, resultados, prefixo)
+    assert {p.suffix for p in tmp_path.glob("relatorio.*")} == {".json", ".csv", ".md"}
+    assert "p_Holm=" in prefixo.with_suffix(".md").read_text(encoding="utf-8")
+    assert "condicao,persona_id" in prefixo.with_suffix(".csv").read_text(encoding="utf-8")
+
     _ = handlers  # reaproveitado via `montar`
+
+
+def test_snapshot_de_item_descartado_preserva_enunciado_resolucao_e_codigo():
+    from estudai.application.pratica import ItemDescartado
+    from estudai.domain.questoes import Exercicio
+    from estudai.evaluation.registros import registro_descartado
+
+    exercicio = Exercicio(
+        id="gen-descartado",
+        topico=T,
+        conceitos=["funcao_afim"],
+        enunciado="Quanto vale f(2)?",
+        alternativas=["1", "2", "3", "4", "5"],
+        gabarito="B",
+        resolucao="f(2) = 2",
+        codigo_verificacao="print(2)",
+    )
+    registro = registro_descartado(ItemDescartado(exercicio=exercicio, motivo="sem consenso"))
+
+    assert registro.id == "gen-descartado"
+    assert registro.enunciado == "Quanto vale f(2)?"
+    assert registro.resolucao == "f(2) = 2"
+    assert registro.codigo_verificacao == "print(2)"
+    assert registro.motivo == "sem consenso"
 
 
 def test_concordancia_entre_juizes_tolera_falhas_e_mede_proximidade():

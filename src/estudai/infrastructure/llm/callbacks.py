@@ -54,7 +54,12 @@ class UsageLedgerCallback(BaseCallbackHandler):
         informado = (getattr(message, "response_metadata", None) or {}).get("cost_usd")
         if informado is None:
             informado = ((response.llm_output or {}).get("token_usage") or {}).get("cost")
-        return float(informado) if informado is not None else (inp * self._price_in + out * self._price_out) / 1e6
+        calculado = (inp * self._price_in + out * self._price_out) / 1e6
+        if informado is not None:
+            valor = float(informado)
+            if valor > 0 or (self._price_in == 0 and self._price_out == 0):
+                return valor
+        return calculado
 
     def on_llm_error(self, error, *, run_id, **kwargs):
         # sem isto, chamadas que falham (após os retries do cliente) ficariam presas em `_starts`

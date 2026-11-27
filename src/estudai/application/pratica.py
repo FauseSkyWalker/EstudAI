@@ -48,6 +48,7 @@ class GeneratedExerciseProvider:
         self._gerador = gerador
         self._validador = validador
         self._tentativas = tentativas_por_item
+        self._usados: list[str] = []  # evita repetir enunciados entre ciclos
 
     def fornecer(
         self, perfil: PerfilAluno, topico: Topico, n: int, excluir: frozenset[str] = frozenset()
@@ -56,13 +57,14 @@ class GeneratedExerciseProvider:
         visao = perfil.visao(topico)
         for plano in planejar_pratica(perfil, topico, n):
             for _ in range(self._tentativas):
-                evitar = [e.enunciado for e in resultado.exercicios]
+                evitar = [*self._usados, *(e.enunciado for e in resultado.exercicios)]
                 try:
                     exercicio = self._gerador.gerar(visao, topico, plano, evitar)
                 except AgentOutputError as exc:
                     resultado.falhas_geracao += 1
                     resultado.descartados.append(ItemDescartado(exercicio=None, motivo=f"geração falhou: {exc}"))
                     continue
+                self._usados.append(exercicio.enunciado)
                 validacao = self._validador.validar(exercicio)
                 if validacao.aprovado:
                     resultado.exercicios.append(exercicio)
@@ -78,11 +80,16 @@ class BankExerciseProvider:
     def __init__(self, banco: QuestionBank, *, seed: int = 0) -> None:
         self._banco = banco
         self._rng = random.Random(seed)
+        self._usados: set[str] = set()  # evita repetir questões entre ciclos da mesma execução
 
     def fornecer(
         self, perfil: PerfilAluno, topico: Topico, n: int, excluir: frozenset[str] = frozenset()
     ) -> ResultadoFornecimento:
-        disponiveis = [q for q in self._banco.find(topico, Particao.BANCO) if q.id not in excluir]
+        disponiveis = [
+            q
+            for q in self._banco.find(topico, Particao.BANCO)
+            if q.id not in excluir and q.id not in self._usados
+        ]
         self._rng.shuffle(disponiveis)
         escolhidas = []
         for plano in planejar_pratica(perfil, topico, n):
@@ -92,5 +99,6 @@ class BankExerciseProvider:
             # prefere a dificuldade planejada, sem perder a aleatoriedade do embaralhamento
             q = min(candidatas, key=lambda q: q.dificuldade != plano.dificuldade)
             escolhidas.append(q)
+            self._usados.add(q.id)
             disponiveis.remove(q)
         return ResultadoFornecimento(exercicios=[Exercicio.da_questao(q) for q in escolhidas])

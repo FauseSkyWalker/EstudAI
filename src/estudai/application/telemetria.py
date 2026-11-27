@@ -50,6 +50,10 @@ class UsageLedger:
         with self._lock:
             return len(self._records)
 
+    def records(self, since: int = 0) -> list[UsageRecord]:
+        with self._lock:
+            return list(self._records[since:])
+
     def summary(self, since: int = 0) -> UsageSummary:
         with self._lock:
             records = self._records[since:]

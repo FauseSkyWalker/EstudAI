@@ -8,7 +8,7 @@ from estudai.agents.diagnosticador import Diagnosticador
 from estudai.agents.resumo import AgenteResumo
 from estudai.agents.tutor import Tutor
 from estudai.application.cycle.config import ConfigSessao
-from estudai.application.cycle.deps import CycleDependencies
+from estudai.application.cycle.deps import CycleDependencies, OnTutoring
 from estudai.application.cycle.result import ResultadoCiclo
 from estudai.application.cycle.runner import StudyCycle
 from estudai.application.pratica import ExerciseProvider
@@ -43,6 +43,7 @@ class Orquestrador:
         figuras: FigureRenderer | None = None,
         max_figuras: int = 2,
         max_figuras_exercicio: int = 1,
+        on_tutoring: OnTutoring | None = None,
     ) -> None:
         self._deps = CycleDependencies(
             diagnosticador=diagnosticador,
@@ -58,6 +59,7 @@ class Orquestrador:
             figuras=figuras,
             max_figuras=max_figuras,
             max_figuras_exercicio=max_figuras_exercicio,
+            on_tutoring=on_tutoring,
         )
         self._tutores = tutores
         self._config = self._deps.config

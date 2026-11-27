@@ -132,6 +132,7 @@ class Exercicio(ItemObjetivo):
             enunciado=questao.enunciado,
             alternativas=questao.alternativas,
             gabarito=questao.gabarito,
+            descricoes_imagens=questao.descricoes_imagens,
             origem=OrigemItem.BANCO,
             referencias=[questao.id],
         )

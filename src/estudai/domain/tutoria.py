@@ -67,6 +67,8 @@ class TranscricaoTutoria(BaseModel):
             for figura in t.turno.figuras:  # juízes e resumo precisam saber quais figuras foram mostradas
                 linhas.append(f"TUTOR (figura): {figura.descricao}")
             linhas.append(f"TUTOR (pergunta): {t.turno.pergunta_verificacao}")
+            if t.turno.conceitos_validados:
+                linhas.append(f"TUTOR (conceitos que considerou validados): {', '.join(t.turno.conceitos_validados)}")
             if t.resposta_aluno is not None:
                 linhas.append(f"ALUNO: {t.resposta_aluno}")
         return "\n".join(linhas)

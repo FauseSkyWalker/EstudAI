@@ -16,6 +16,7 @@ class ModelConfig(BaseModel):
     requests_per_minute: float | None = None
     structured_output_method: Literal["json_schema", "function_calling", "json_mode"] = "json_schema"
     extra_body: dict[str, Any] = Field(default_factory=dict)
+    default_headers: dict[str, str] = Field(default_factory=dict)  # required for opencode go stuff
 
 
 def _deepseek_flash() -> ModelConfig:
